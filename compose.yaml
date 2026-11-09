@@ -1,0 +1,70 @@
+name: zhangpu-ordinary-dev
+x-runtime: &runtime
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging:
+    options: {max-size: '5m', max-file: '2'}
+services:
+  office:
+    <<: *runtime
+    build: {context: ., dockerfile: docker/Dockerfile.office}
+    network_mode: none
+    volumes: [office-socket:/run/office]
+    tmpfs: ['/tmp:size=256m,mode=1777']
+    pids_limit: 128
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, /usr/bin/python3, -c, "from pathlib import Path; assert Path('/run/office/convert.sock').is_socket()"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  api:
+    <<: *runtime
+    build: {context: ., dockerfile: docker/Dockerfile.api}
+    ports: ['127.0.0.1:${ZHANGPU_WEB_PORT:-3271}:3000']
+    environment:
+      FINANCE_DATA_DIR: /data
+      DATABASE_URL: sqlite:////data/demo.sqlite3
+      FINANCE_DEVELOPMENT_HTTP: 'true'
+      FINANCE_DEVELOPMENT_COOKIE_SCOPE: ordinary_dev
+      FINANCE_ALLOWED_WEB_ORIGINS: 'http://127.0.0.1:${ZHANGPU_WEB_PORT:-3271}'
+      FINANCE_APPLICATION_API_ENABLED: 'true'
+      FINANCE_APPLICATION_API_PUBLIC_BASE_URL: 'http://127.0.0.1:${ZHANGPU_WEB_PORT:-3271}/api/open/v1'
+      FINANCE_KNOWLEDGE_PUBLIC_BASE_URL: 'http://127.0.0.1:${ZHANGPU_WEB_PORT:-3271}'
+      FINANCE_OFFICE_SOCKET: /run/office/convert.sock
+      FINANCE_OFFICE_CONVERTER_ID: '${ZHANGPU_OFFICE_IMAGE_ID:-sha256:7b50c3a1f1e2269782b3f37244ce2a768176e9d5e2725f3f77adacad2902cfb7}'
+      LANGSMITH_TRACING: 'false'
+      LANGCHAIN_TRACING_V2: 'false'
+      TOOL_ALLOWED_ORIGINS: https://tools-not-configured.invalid
+    volumes:
+      - development-data:/data
+      - type: volume
+        source: office-socket
+        target: /run/office
+        read_only: true
+        volume: {nocopy: true}
+    tmpfs: ['/tmp:size=128m,mode=1777']
+    depends_on:
+      office: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).status == 200"]
+      interval: 5s
+      timeout: 3s
+      retries: 8
+  web:
+    <<: *runtime
+    build: {context: ., dockerfile: docker/Dockerfile.web}
+    network_mode: service:api
+    tmpfs: ['/tmp:size=64m,mode=1777']
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/v1/auth/status').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 8
+volumes:
+  development-data:
+  office-socket:

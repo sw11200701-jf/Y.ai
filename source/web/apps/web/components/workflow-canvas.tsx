@@ -1,0 +1,16 @@
+'use client';
+import { useCallback, useEffect } from 'react';
+import { Background, Controls, Handle, Position, ReactFlow, useEdgesState, useNodesState, addEdge, NodeProps } from '@xyflow/react';
+import { ApiOutlined, BarChartOutlined, CalculatorOutlined, FileTextOutlined, PlayCircleOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { Workflow } from '@/lib/api';
+export const nodeNames: Record<string, string> = { start: '开始', plugin: '插件工具', query: '财务查询', calculate: '指标计算', chart: '图表', report: '报告', end: '结束' };
+const icons: Record<string, React.ReactNode> = { start: <PlayCircleOutlined />, plugin: <ApiOutlined />, calculate: <CalculatorOutlined />, chart: <BarChartOutlined />, report: <FileTextOutlined />, end: <CheckCircleOutlined /> };
+function FinanceNode({ data, selected }: NodeProps) { const type = String(data.kind); return <div className={`canvas-node${selected ? ' selected' : ''}`}>{type !== 'start' && <Handle type="target" position={Position.Left} />}<div className="node-icon">{icons[type] || <ApiOutlined />}</div><strong>{nodeNames[type]}</strong><small>{String(data.subtitle || data.id)}</small>{type !== 'end' && <Handle type="source" position={Position.Right} />}</div>; }
+const nodeTypes = { finance: FinanceNode };
+export default function WorkflowCanvas({ workflow, onChange, onSelect }: { workflow: Workflow; onChange: (w: Workflow) => void; onSelect: (id: string) => void }) {
+  const [nodes, setNodes, onNodesChange] = useNodesState(workflow.nodes.map((n, i) => ({ id: n.id, type: 'finance', deletable: false, position: n.config.ui_position || { x: i * 185, y: 60 }, data: { kind: n.type, id: n.id, subtitle: n.type === 'plugin' ? n.config.binding?.tool_id || '待绑定真实工具' : n.type === 'calculate' ? 'Decimal · v1.0.0' : '数据快照贯通' } })));
+  const [edges, setEdges, onEdgesChange] = useEdgesState(workflow.edges.map((e, i) => ({ ...e, id: `edge-${i}`, style: { stroke: '#9bb58f', strokeWidth: 1.6 } })));
+  useEffect(() => { setNodes(workflow.nodes.map((n, i) => ({ id: n.id, type: 'finance', deletable: false, position: n.config.ui_position || { x: i * 185, y: 60 }, data: { kind: n.type, id: n.id, subtitle: n.type === 'plugin' ? n.config.binding?.tool_id || '待绑定真实工具' : n.type === 'calculate' ? 'Decimal · v1.0.0' : '数据快照贯通' } }))); setEdges(workflow.edges.map((e, i) => ({ ...e, id: `edge-${i}`, style: { stroke: '#9bb58f', strokeWidth: 1.6 } }))); }, [workflow, setNodes, setEdges]);
+  const connect = useCallback((connection: any) => { const next = addEdge(connection, edges); setEdges(next); onChange({ ...workflow, edges: next.map(e => ({ source: e.source, target: e.target })) }); }, [edges, onChange, setEdges, workflow]);
+  return <div className="canvas"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={connect} onNodeClick={(_, n) => onSelect(n.id)} onNodeDragStop={(_, n) => onChange({ ...workflow, nodes: workflow.nodes.map(x => x.id === n.id ? { ...x, config: { ...x.config, ui_position: n.position } } : x) })} onEdgesDelete={removed => onChange({ ...workflow, edges: edges.filter(e => !removed.some(r => r.id === e.id)).map(e => ({ source: e.source, target: e.target })) })} fitView minZoom={0.35} maxZoom={1.5} attributionPosition="bottom-left"><Background gap={20} color="#dce6d5" /><Controls /></ReactFlow></div>;
+}

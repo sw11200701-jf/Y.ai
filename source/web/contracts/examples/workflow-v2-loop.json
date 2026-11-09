@@ -1,0 +1,147 @@
+{
+  "id": null,
+  "name": "Annual financial analysis",
+  "version": "1.0.0",
+  "mode": "demo",
+  "schemaVersion": "2.0",
+  "input_schema": {
+    "type": "object"
+  },
+  "variables": {},
+  "limits": {
+    "max_steps": 256,
+    "timeout_seconds": 120
+  },
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "config": {},
+      "inputs": {}
+    },
+    {
+      "id": "repeat",
+      "type": "loop",
+      "config": {
+        "body": {
+          "id": null,
+          "name": "Annual financial analysis",
+          "version": "1.0.0",
+          "mode": "demo",
+          "schemaVersion": "2.0",
+          "input_schema": {
+            "type": "object"
+          },
+          "variables": {
+            "counter": {
+              "type": "number",
+              "default": "0"
+            }
+          },
+          "limits": {
+            "max_steps": 256,
+            "timeout_seconds": 120
+          },
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "inputs": {}
+            },
+            {
+              "id": "initial",
+              "type": "assign",
+              "config": {
+                "name": "counter"
+              },
+              "inputs": {
+                "value": {
+                  "$ref": "loop.state.n"
+                }
+              }
+            },
+            {
+              "id": "step",
+              "type": "assign",
+              "config": {
+                "name": "counter",
+                "operation": "increment"
+              },
+              "inputs": {
+                "value": "1"
+              }
+            },
+            {
+              "id": "answer",
+              "type": "answer",
+              "config": {},
+              "inputs": {
+                "n": {
+                  "$ref": "nodes.step.value"
+                }
+              }
+            }
+          ],
+          "edges": [
+            {
+              "source": "start",
+              "target": "initial",
+              "source_port": "default",
+              "target_port": "default"
+            },
+            {
+              "source": "initial",
+              "target": "step",
+              "source_port": "default",
+              "target_port": "default"
+            },
+            {
+              "source": "step",
+              "target": "answer",
+              "source_port": "default",
+              "target_port": "default"
+            }
+          ]
+        },
+        "max_iterations": 3,
+        "timeout_seconds": 1,
+        "state": {
+          "n": "0"
+        },
+        "until": {
+          "left": {
+            "$ref": "loop.state.n"
+          },
+          "operator": "gte",
+          "right": "3"
+        }
+      },
+      "inputs": {}
+    },
+    {
+      "id": "answer",
+      "type": "answer",
+      "config": {},
+      "inputs": {
+        "value": {
+          "$ref": "nodes.repeat.state"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "start",
+      "target": "repeat",
+      "source_port": "default",
+      "target_port": "default"
+    },
+    {
+      "source": "repeat",
+      "target": "answer",
+      "source_port": "default",
+      "target_port": "default"
+    }
+  ]
+}

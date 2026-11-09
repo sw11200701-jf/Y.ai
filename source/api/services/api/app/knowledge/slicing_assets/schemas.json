@@ -1,0 +1,943 @@
+{
+  "plan": {
+    "type": "object",
+    "properties": {
+      "tasks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "task_key": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "core_source_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "context_source_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "task_type": {
+              "type": "string"
+            },
+            "requires_overview": {
+              "type": "boolean"
+            },
+            "overview_requirements": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "required_conditions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "branch_sets": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "image_occurrence_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "source_state": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "task_key",
+            "title",
+            "core_source_ids",
+            "context_source_ids",
+            "task_type",
+            "requires_overview",
+            "overview_requirements",
+            "required_conditions",
+            "branch_sets",
+            "image_occurrence_ids",
+            "source_state"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "need_context": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "source_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_ids",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "tasks",
+      "need_context"
+    ],
+    "additionalProperties": false
+  },
+  "result": {
+    "type": "object",
+    "properties": {
+      "complete": {
+        "type": "boolean"
+      },
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "knowledge_id": {
+              "type": "string"
+            },
+            "task_key": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "knowledge_layer": {
+              "type": "string",
+              "enum": [
+                "scenario_overview",
+                "atomic_detail"
+              ]
+            },
+            "parent_task_key": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "制度",
+                "流程",
+                "操作",
+                "表格",
+                "定义",
+                "FAQ",
+                "其他"
+              ]
+            },
+            "content": {
+              "type": "string"
+            },
+            "source_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "occurrence_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "description": "证据二选一：纯文本不得包含任何图片字段；图片证据必须完整绑定真实出现、资产与四数像素框。",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "quote": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "source_id",
+                      "quote",
+                      "role"
+                    ],
+                    "additionalProperties": false,
+                    "description": "纯文本证据。只输出source_id、逐字quote与role。不得输出图片字段；region不是行号或段号。"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "quote": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string"
+                      },
+                      "occurrence_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "asset_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "region": {
+                        "type": "array",
+                        "items": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "minItems": 4,
+                        "maxItems": 4,
+                        "description": "仅图片证据：原图像素矩形[x0,y0,x1,y1]。不是文本行号。"
+                      }
+                    },
+                    "required": [
+                      "source_id",
+                      "quote",
+                      "role",
+                      "occurrence_id",
+                      "asset_id",
+                      "region"
+                    ],
+                    "additionalProperties": false,
+                    "description": "仅限输入注册表中的真实图片出现。必须同时给出匹配的occurrence_id、asset_id和四数像素矩形region。"
+                  }
+                ]
+              }
+            },
+            "branches": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "exclusive_set": {
+                    "type": "string"
+                  },
+                  "condition": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "exclusive_set",
+                  "condition",
+                  "outcome"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "semantic_checks": {
+              "type": "object",
+              "properties": {
+                "self_contained": {
+                  "type": "boolean"
+                },
+                "conditions_complete": {
+                  "type": "boolean"
+                },
+                "branches_valid": {
+                  "type": "boolean"
+                },
+                "version_grounded": {
+                  "type": "boolean"
+                },
+                "image_evidence_sufficient": {
+                  "type": "boolean"
+                },
+                "intent_packaged": {
+                  "type": "boolean"
+                },
+                "answer_scoped": {
+                  "type": "boolean"
+                },
+                "source_claims_traceable": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "self_contained",
+                "conditions_complete",
+                "branches_valid",
+                "version_grounded",
+                "image_evidence_sufficient",
+                "intent_packaged",
+                "answer_scoped",
+                "source_claims_traceable"
+              ],
+              "additionalProperties": false
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "approved",
+                "pending_review"
+              ]
+            },
+            "claims": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence_indices": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "text",
+                  "evidence_indices"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "knowledge_id",
+            "task_key",
+            "title",
+            "knowledge_layer",
+            "parent_task_key",
+            "kind",
+            "content",
+            "source_ids",
+            "occurrence_ids",
+            "evidence",
+            "branches",
+            "semantic_checks",
+            "status",
+            "claims"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "coverage": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "object_type": {
+              "type": "string",
+              "enum": [
+                "source",
+                "occurrence"
+              ]
+            },
+            "object_id": {
+              "type": "string"
+            },
+            "disposition": {
+              "type": "string",
+              "enum": [
+                "represented",
+                "pending_review",
+                "excluded_with_reason"
+              ]
+            },
+            "knowledge_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "object_type",
+            "object_id",
+            "disposition",
+            "knowledge_ids",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "issues": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "rule": {
+              "type": "string"
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "blocker",
+                "info"
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "open",
+                "resolved"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "source_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "occurrence_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "rule",
+            "severity",
+            "status",
+            "message",
+            "source_ids",
+            "occurrence_ids"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "complete",
+      "items",
+      "coverage",
+      "issues"
+    ],
+    "additionalProperties": false
+  },
+  "merge": {
+    "type": "object",
+    "properties": {
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "knowledge_id": {
+              "type": "string"
+            },
+            "task_key": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "knowledge_layer": {
+              "type": "string",
+              "enum": [
+                "scenario_overview",
+                "atomic_detail"
+              ]
+            },
+            "parent_task_key": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "制度",
+                "流程",
+                "操作",
+                "表格",
+                "定义",
+                "FAQ",
+                "其他"
+              ]
+            },
+            "content": {
+              "type": "string"
+            },
+            "source_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "occurrence_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "description": "证据二选一：纯文本不得包含任何图片字段；图片证据必须完整绑定真实出现、资产与四数像素框。",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "quote": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "source_id",
+                      "quote",
+                      "role"
+                    ],
+                    "additionalProperties": false,
+                    "description": "纯文本证据。只输出source_id、逐字quote与role。不得输出图片字段；region不是行号或段号。"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "quote": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string"
+                      },
+                      "occurrence_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "asset_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "region": {
+                        "type": "array",
+                        "items": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "minItems": 4,
+                        "maxItems": 4,
+                        "description": "仅图片证据：原图像素矩形[x0,y0,x1,y1]。不是文本行号。"
+                      }
+                    },
+                    "required": [
+                      "source_id",
+                      "quote",
+                      "role",
+                      "occurrence_id",
+                      "asset_id",
+                      "region"
+                    ],
+                    "additionalProperties": false,
+                    "description": "仅限输入注册表中的真实图片出现。必须同时给出匹配的occurrence_id、asset_id和四数像素矩形region。"
+                  }
+                ]
+              }
+            },
+            "branches": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "exclusive_set": {
+                    "type": "string"
+                  },
+                  "condition": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "exclusive_set",
+                  "condition",
+                  "outcome"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "semantic_checks": {
+              "type": "object",
+              "properties": {
+                "self_contained": {
+                  "type": "boolean"
+                },
+                "conditions_complete": {
+                  "type": "boolean"
+                },
+                "branches_valid": {
+                  "type": "boolean"
+                },
+                "version_grounded": {
+                  "type": "boolean"
+                },
+                "image_evidence_sufficient": {
+                  "type": "boolean"
+                },
+                "intent_packaged": {
+                  "type": "boolean"
+                },
+                "answer_scoped": {
+                  "type": "boolean"
+                },
+                "source_claims_traceable": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "self_contained",
+                "conditions_complete",
+                "branches_valid",
+                "version_grounded",
+                "image_evidence_sufficient",
+                "intent_packaged",
+                "answer_scoped",
+                "source_claims_traceable"
+              ],
+              "additionalProperties": false
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "approved",
+                "pending_review"
+              ]
+            },
+            "claims": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence_indices": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "text",
+                  "evidence_indices"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "knowledge_id",
+            "task_key",
+            "title",
+            "knowledge_layer",
+            "parent_task_key",
+            "kind",
+            "content",
+            "source_ids",
+            "occurrence_ids",
+            "evidence",
+            "branches",
+            "semantic_checks",
+            "status",
+            "claims"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "id_map": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "old_id": {
+              "type": "string"
+            },
+            "new_id": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "old_id",
+            "new_id",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "issues": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "rule": {
+              "type": "string"
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "blocker",
+                "info"
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "open",
+                "resolved"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "source_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "occurrence_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "rule",
+            "severity",
+            "status",
+            "message",
+            "source_ids",
+            "occurrence_ids"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "items",
+      "id_map",
+      "issues"
+    ],
+    "additionalProperties": false
+  },
+  "candidates": {
+    "type": "object",
+    "properties": {
+      "assessed_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "pairs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "from_id": {
+              "type": "string"
+            },
+            "to_id": {
+              "type": "string"
+            },
+            "candidate_type": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "from_id",
+            "to_id",
+            "candidate_type",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "assessed_ids",
+      "pairs"
+    ],
+    "additionalProperties": false
+  },
+  "relation": {
+    "type": "object",
+    "properties": {
+      "decision": {
+        "type": "string",
+        "enum": [
+          "accept",
+          "reject",
+          "pending_review"
+        ]
+      },
+      "reason": {
+        "type": "string"
+      },
+      "relation": {
+        "type": "object",
+        "properties": {
+          "from_id": {
+            "type": "string"
+          },
+          "to_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "prerequisite",
+              "next_step",
+              "alternative",
+              "exception",
+              "related"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "description": "证据二选一：纯文本不得包含任何图片字段；图片证据必须完整绑定真实出现、资产与四数像素框。",
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "source_id": {
+                      "type": "string"
+                    },
+                    "quote": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "source_id",
+                    "quote",
+                    "role"
+                  ],
+                  "additionalProperties": false,
+                  "description": "纯文本证据。只输出source_id、逐字quote与role。不得输出图片字段；region不是行号或段号。"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "source_id": {
+                      "type": "string"
+                    },
+                    "quote": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    },
+                    "occurrence_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "asset_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "region": {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "minItems": 4,
+                      "maxItems": 4,
+                      "description": "仅图片证据：原图像素矩形[x0,y0,x1,y1]。不是文本行号。"
+                    }
+                  },
+                  "required": [
+                    "source_id",
+                    "quote",
+                    "role",
+                    "occurrence_id",
+                    "asset_id",
+                    "region"
+                  ],
+                  "additionalProperties": false,
+                  "description": "仅限输入注册表中的真实图片出现。必须同时给出匹配的occurrence_id、asset_id和四数像素矩形region。"
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "from_id",
+          "to_id",
+          "type",
+          "reason",
+          "evidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "decision",
+      "reason",
+      "relation"
+    ],
+    "additionalProperties": false
+  }
+}

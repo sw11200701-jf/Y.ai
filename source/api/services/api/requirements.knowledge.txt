@@ -1,0 +1,4 @@
+# Isolated knowledge runtime; resolved versions are captured in the knowledge lock.
+-r requirements.lock.txt
+pgvector
+fastembed

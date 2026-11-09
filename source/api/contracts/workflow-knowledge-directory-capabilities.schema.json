@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "workflow-knowledge-directory-v1",
+      "default": "workflow-knowledge-directory-v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "catalog": {
+      "const": "published_knowledge_versions",
+      "default": "published_knowledge_versions",
+      "title": "Catalog",
+      "type": "string"
+    },
+    "resource_collections": {
+      "items": {
+        "enum": [
+          "documents",
+          "datasets"
+        ],
+        "type": "string"
+      },
+      "title": "Resource Collections",
+      "type": "array"
+    },
+    "typed_sources": {
+      "const": false,
+      "default": false,
+      "title": "Typed Sources",
+      "type": "boolean"
+    },
+    "published_status": {
+      "const": "published",
+      "default": "published",
+      "title": "Published Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "resource_collections"
+  ],
+  "title": "KnowledgeDirectoryCapabilities",
+  "type": "object"
+}

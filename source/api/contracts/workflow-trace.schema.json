@@ -1,0 +1,152 @@
+{
+  "$defs": {
+    "NodeTrace": {
+      "properties": {
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "node_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Node Type"
+        },
+        "sequence": {
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "inputs": {
+          "default": null,
+          "title": "Inputs"
+        },
+        "outputs": {
+          "default": null,
+          "title": "Outputs"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "reasoning": {
+          "additionalProperties": true,
+          "title": "Reasoning",
+          "type": "object"
+        },
+        "sources": {
+          "title": "Sources"
+        },
+        "technical": {
+          "additionalProperties": true,
+          "title": "Technical",
+          "type": "object"
+        }
+      },
+      "required": [
+        "node_id",
+        "sequence",
+        "status",
+        "reasoning"
+      ],
+      "title": "NodeTrace",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "execution_identity": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Execution Identity"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/NodeTrace"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "last_sequence": {
+      "title": "Last Sequence",
+      "type": "integer"
+    },
+    "has_more": {
+      "title": "Has More",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "run_id",
+    "items",
+    "last_sequence",
+    "has_more"
+  ],
+  "title": "TracePage",
+  "type": "object"
+}

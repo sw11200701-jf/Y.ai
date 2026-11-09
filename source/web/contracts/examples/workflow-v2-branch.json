@@ -1,0 +1,125 @@
+{
+  "id": null,
+  "name": "Annual financial analysis",
+  "version": "1.0.0",
+  "mode": "demo",
+  "schemaVersion": "2.0",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "approved": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "approved"
+    ]
+  },
+  "variables": {},
+  "limits": {
+    "max_steps": 256,
+    "timeout_seconds": 120
+  },
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "config": {},
+      "inputs": {}
+    },
+    {
+      "id": "decision",
+      "type": "if_else",
+      "config": {
+        "operator": "eq"
+      },
+      "inputs": {
+        "left": {
+          "$ref": "inputs.approved"
+        },
+        "right": true
+      }
+    },
+    {
+      "id": "yes",
+      "type": "template",
+      "config": {
+        "template": "approved"
+      },
+      "inputs": {}
+    },
+    {
+      "id": "no",
+      "type": "template",
+      "config": {
+        "template": "rejected"
+      },
+      "inputs": {}
+    },
+    {
+      "id": "merge",
+      "type": "aggregate",
+      "config": {},
+      "inputs": {
+        "values": [
+          {
+            "$ref": "nodes.yes.text",
+            "optional": true
+          },
+          {
+            "$ref": "nodes.no.text",
+            "optional": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "answer",
+      "type": "answer",
+      "config": {},
+      "inputs": {
+        "text": {
+          "$ref": "nodes.merge.value"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "start",
+      "target": "decision",
+      "source_port": "default",
+      "target_port": "default"
+    },
+    {
+      "source": "decision",
+      "target": "yes",
+      "source_port": "true",
+      "target_port": "default"
+    },
+    {
+      "source": "decision",
+      "target": "no",
+      "source_port": "false",
+      "target_port": "default"
+    },
+    {
+      "source": "yes",
+      "target": "merge",
+      "source_port": "default",
+      "target_port": "default"
+    },
+    {
+      "source": "no",
+      "target": "merge",
+      "source_port": "default",
+      "target_port": "default"
+    },
+    {
+      "source": "merge",
+      "target": "answer",
+      "source_port": "default",
+      "target_port": "default"
+    }
+  ]
+}

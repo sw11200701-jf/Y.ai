@@ -1,0 +1,8 @@
+.field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; font-size: 12px; color: #445d76; }
+.field small { color: #718095; line-height: 1.6; }
+.commandActions { margin-bottom: 16px; }
+.preview { margin: 20px 0; padding: 18px; border: 1px solid #dfe7ef; border-radius: 14px; background: #f8fafc; overflow-wrap: anywhere; }
+.preview h3,.grid h3 { margin: 0 0 14px; font-size: 15px; color: #344f6c; }
+.preview p { font-size: 12px; line-height: 1.7; }
+.grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; margin: 24px 0; }
+@media(max-width:760px) { .grid { grid-template-columns: 1fr; gap: 16px; } .preview { padding: 14px; } }

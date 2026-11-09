@@ -1,0 +1,2996 @@
+{
+  "version": "2.1.0",
+  "items": [
+    {
+      "type": "start",
+      "label": "开始",
+      "category": "control",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "object"
+          },
+          "query": {
+            "type": "object"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "message": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "input",
+      "label": "用户输入",
+      "category": "control",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "object"
+          },
+          "query": {
+            "type": "object"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "message": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "end",
+      "label": "结束",
+      "category": "control",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "output",
+      "label": "输出",
+      "category": "control",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "presentation": {
+            "enum": [
+              "auto",
+              "text",
+              "table",
+              "files",
+              "mixed",
+              "json"
+            ]
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object"
+          },
+          "presentation": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "answer",
+      "label": "回答",
+      "category": "control",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "if_else",
+      "label": "条件分支",
+      "category": "control",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "operator": {
+            "enum": [
+              "eq",
+              "ne",
+              "gt",
+              "gte",
+              "lt",
+              "lte",
+              "contains",
+              "empty",
+              "not_empty"
+            ]
+          },
+          "logical_operator": {
+            "enum": [
+              "and",
+              "or"
+            ]
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "operator"
+            ]
+          },
+          {
+            "required": [
+              "logical_operator"
+            ]
+          }
+        ]
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "left": {},
+          "right": {},
+          "conditions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "$defs": {
+          "condition": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "operator": {
+                    "enum": [
+                      "eq",
+                      "ne",
+                      "gt",
+                      "gte",
+                      "lt",
+                      "lte",
+                      "contains",
+                      "empty",
+                      "not_empty"
+                    ]
+                  },
+                  "left": {},
+                  "right": {}
+                },
+                "required": [
+                  "operator",
+                  "left"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "logical_operator": {
+                    "enum": [
+                      "and",
+                      "or"
+                    ]
+                  },
+                  "conditions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "items": {
+                      "$ref": "#/$defs/condition"
+                    }
+                  }
+                },
+                "required": [
+                  "logical_operator",
+                  "conditions"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "left"
+            ]
+          },
+          {
+            "required": [
+              "conditions"
+            ]
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "true",
+        "false"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "template",
+      "label": "模板转换",
+      "category": "transform",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "template": {
+            "type": "string"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "template"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "assign",
+      "label": "变量赋值",
+      "category": "transform",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "set",
+              "append",
+              "increment"
+            ]
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "value": {}
+        },
+        "required": [
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "value": {}
+        },
+        "required": [
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "aggregate",
+      "label": "变量聚合",
+      "category": "transform",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "strategy": {
+            "enum": [
+              "first_non_null",
+              "collect",
+              "concat",
+              "merge_objects"
+            ]
+          },
+          "join": {
+            "enum": [
+              "any",
+              "all"
+            ]
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "value": {}
+        },
+        "required": [
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "list",
+      "label": "列表操作",
+      "category": "transform",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "enum": [
+              "take",
+              "slice",
+              "sort",
+              "unique",
+              "filter",
+              "length",
+              "flatten"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "field": {
+            "type": "string"
+          },
+          "operator": {
+            "enum": [
+              "eq",
+              "ne",
+              "gt",
+              "gte",
+              "lt",
+              "lte",
+              "contains",
+              "empty",
+              "not_empty"
+            ]
+          },
+          "descending": {
+            "type": "boolean"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array"
+          },
+          "value": {}
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "plugin",
+      "label": "插件工具",
+      "category": "tools",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "binding": {
+            "type": "object",
+            "properties": {
+              "plugin_version_id": {
+                "type": "string"
+              },
+              "tool_id": {
+                "type": "string"
+              },
+              "connection_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "plugin_version_id",
+              "tool_id"
+            ],
+            "additionalProperties": false
+          },
+          "arguments": {
+            "type": "object"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "binding"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "arguments": {
+            "type": "object"
+          },
+          "message": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "facts": {
+            "type": "array"
+          },
+          "data": {},
+          "source_refs": {
+            "type": "array"
+          },
+          "audit": {
+            "type": "object"
+          },
+          "warnings": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "facts"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "needs_configuration",
+      "reason": "Requires published tool binding/connection"
+    },
+    {
+      "type": "http",
+      "label": "HTTP接口（受保护连接）",
+      "category": "tools",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "binding": {
+            "type": "object",
+            "properties": {
+              "plugin_version_id": {
+                "type": "string"
+              },
+              "tool_id": {
+                "type": "string"
+              },
+              "connection_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "plugin_version_id",
+              "tool_id"
+            ],
+            "additionalProperties": false
+          },
+          "arguments": {
+            "type": "object"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "binding"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "arguments": {
+            "type": "object"
+          },
+          "message": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "facts": {
+            "type": "array"
+          },
+          "data": {},
+          "source_refs": {
+            "type": "array"
+          },
+          "audit": {
+            "type": "object"
+          },
+          "warnings": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "facts"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "needs_configuration",
+      "reason": "Requires published tool binding/connection"
+    },
+    {
+      "type": "query",
+      "label": "多数据源财务查询",
+      "category": "finance",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "object"
+          },
+          "sources": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "facts": {
+            "type": "array"
+          },
+          "source_refs": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "data_sources": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "facts"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "calculate",
+      "label": "财务指标计算",
+      "category": "finance",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "facts": {
+            "type": "array"
+          },
+          "query": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "facts"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "type": "object"
+          },
+          "dataset_id": {
+            "type": "string"
+          },
+          "snapshot_id": {
+            "type": "string"
+          },
+          "source_refs": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "data_sources": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "dataset"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "chart",
+      "label": "图表",
+      "category": "finance",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "series": {
+            "type": "array"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "dataset"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "chart_spec": {
+            "type": "object"
+          },
+          "source_refs": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "data_sources": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "chart_spec"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "report",
+      "label": "Word/Excel报告",
+      "category": "finance",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "dataset"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "artifacts": {
+            "type": "array"
+          },
+          "artifact_ids": {
+            "type": "array"
+          },
+          "dataset_id": {
+            "type": "string"
+          },
+          "source_refs": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "data_sources": {
+            "type": "array"
+          },
+          "snapshot_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifacts",
+          "artifact_ids"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "document_generate",
+      "label": "通用Word/Excel/PPT生成",
+      "category": "tools",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "tool_id": {
+            "enum": [
+              "document.word.v1",
+              "document.excel.v1",
+              "document.powerpoint.v1"
+            ]
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "tool_id"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "arguments": {
+            "type": "object"
+          },
+          "source_resources": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "resource_id"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "arguments"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "artifact_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "artifacts": {
+            "type": "array"
+          },
+          "data_sources": {
+            "type": "array"
+          },
+          "source_refs": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "artifact_ids",
+          "artifacts",
+          "data_sources"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": "app.reporting.document_nodes",
+      "status": "supported",
+      "reason": "Fixed strict renderer schema; original durable Run/Artifact/export_detail checks; no model request"
+    },
+    {
+      "type": "iteration",
+      "label": "列表迭代",
+      "category": "control",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object"
+          },
+          "max_iterations": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "body",
+          "max_iterations",
+          "timeout_seconds"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "loop",
+      "label": "有界循环",
+      "category": "control",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object"
+          },
+          "max_iterations": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "state": {
+            "type": "object"
+          },
+          "until": {
+            "type": "object"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "body",
+          "max_iterations",
+          "timeout_seconds",
+          "until"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "object"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "count"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "llm",
+      "label": "大语言模型",
+      "category": "intelligence",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "model_config_id": {
+            "type": "string"
+          },
+          "model_config_version": {
+            "type": "string"
+          },
+          "system_prompt": {
+            "type": "string",
+            "maxLength": 16000
+          },
+          "prompt_messages": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "enum": [
+                    "system",
+                    "user",
+                    "assistant"
+                  ]
+                },
+                "content": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 16000
+                }
+              },
+              "required": [
+                "role",
+                "content"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "model_parameters": {
+            "type": "object",
+            "properties": {
+              "temperature": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 2
+              },
+              "top_p": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "max_tokens": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4096
+              },
+              "frequency_penalty": {
+                "type": "number",
+                "minimum": -2,
+                "maximum": 2
+              },
+              "presence_penalty": {
+                "type": "number",
+                "minimum": -2,
+                "maximum": 2
+              },
+              "stop": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": -2147483648,
+                "maximum": 2147483647
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "context_budget": {
+            "type": "integer",
+            "minimum": 512,
+            "maximum": 32768
+          },
+          "response_format": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": [
+                  "text",
+                  "json_object",
+                  "json_schema"
+                ]
+              },
+              "schema": {
+                "type": "object"
+              },
+              "name": {
+                "type": "string"
+              },
+              "strict": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          "vision_enabled": {
+            "type": "boolean"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          },
+          "prompt_contract": {
+            "enum": [
+              "local_inputs_v1"
+            ]
+          },
+          "prompt_input_schema": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "model_config_id"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 16000
+          },
+          "context": {},
+          "variables": {
+            "type": "object"
+          },
+          "image_attachment_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,100}$"
+            }
+          },
+          "message": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "model"
+            ]
+          },
+          "usage": {
+            "type": "object"
+          },
+          "structured_output": {
+            "type": "object"
+          },
+          "source_refs": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "reasoning": {
+            "type": "object",
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "kind": {
+                "enum": [
+                  "provider_summary",
+                  "provider_explanation",
+                  "provider_reasoning"
+                ]
+              },
+              "source": {
+                "enum": [
+                  "provider.message.reasoning_summary",
+                  "provider.message.reasoning_explanation",
+                  "provider.message.reasoning_content",
+                  "provider.delta.reasoning_content"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "available",
+                  "truncated",
+                  "disabled",
+                  "not_returned",
+                  "redacted",
+                  "not_adapted"
+                ]
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "profile_id": {
+                "enum": [
+                  "aliyun_public_reasoning_v1",
+                  "ark_public_reasoning_v1",
+                  "ark_public_summary_v1",
+                  "deepseek_public_reasoning_v1"
+                ]
+              },
+              "protocol": {
+                "enum": [
+                  "openai_chat_completions"
+                ]
+              },
+              "profile_verification": {
+                "enum": [
+                  "administrator_declared"
+                ]
+              },
+              "model_revision": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "unavailable_reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "available"
+            ],
+            "additionalProperties": false
+          },
+          "finish_reason": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "completion_truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "mode"
+        ],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "03",
+      "service": "app.agents.nodes",
+      "status": "needs_configuration",
+      "reason": "Requires configured module/model"
+    },
+    {
+      "type": "agent",
+      "label": "独立智能体",
+      "category": "intelligence",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "agent_version_id": {
+            "type": "string"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          },
+          "response_format": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": [
+                  "text",
+                  "json_object",
+                  "json_schema"
+                ]
+              },
+              "schema": {
+                "type": "object"
+              },
+              "name": {
+                "type": "string"
+              },
+              "strict": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          "prompt_contract": {
+            "enum": [
+              "local_inputs_v1"
+            ]
+          },
+          "user_prompt": {
+            "type": "string",
+            "maxLength": 16000
+          }
+        },
+        "required": [
+          "agent_id"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string"
+          },
+          "query": {
+            "type": "object"
+          },
+          "inputs": {
+            "type": "object"
+          },
+          "message": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "demo",
+              "model"
+            ]
+          },
+          "plan": {
+            "type": "object"
+          },
+          "tool_executions": {
+            "type": "array"
+          },
+          "structured_output": {},
+          "facts": {
+            "type": "array"
+          },
+          "source_refs": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "reasoning": {
+            "type": "object",
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "kind": {
+                "enum": [
+                  "provider_summary",
+                  "provider_explanation",
+                  "provider_reasoning"
+                ]
+              },
+              "source": {
+                "enum": [
+                  "provider.message.reasoning_summary",
+                  "provider.message.reasoning_explanation",
+                  "provider.message.reasoning_content",
+                  "provider.delta.reasoning_content"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "available",
+                  "truncated",
+                  "disabled",
+                  "not_returned",
+                  "redacted",
+                  "not_adapted"
+                ]
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "profile_id": {
+                "enum": [
+                  "aliyun_public_reasoning_v1",
+                  "ark_public_reasoning_v1",
+                  "ark_public_summary_v1",
+                  "deepseek_public_reasoning_v1"
+                ]
+              },
+              "protocol": {
+                "enum": [
+                  "openai_chat_completions"
+                ]
+              },
+              "profile_verification": {
+                "enum": [
+                  "administrator_declared"
+                ]
+              },
+              "model_revision": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "unavailable_reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "available"
+            ],
+            "additionalProperties": false
+          },
+          "finish_reason": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "completion_truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "mode"
+        ],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "03",
+      "service": "app.agents.nodes",
+      "status": "needs_configuration",
+      "reason": "Requires configured module/model"
+    },
+    {
+      "type": "parameter_extractor",
+      "label": "参数提取",
+      "category": "intelligence",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "enum": [
+              "demo",
+              "model"
+            ]
+          },
+          "model_config_id": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "object"
+          },
+          "model_config_version": {
+            "type": "string"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "mode",
+          "schema"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "parameters": {
+            "type": "object"
+          },
+          "mode": {
+            "enum": [
+              "demo",
+              "model"
+            ]
+          },
+          "source_refs": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "reasoning": {
+            "type": "object",
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "kind": {
+                "enum": [
+                  "provider_summary",
+                  "provider_explanation",
+                  "provider_reasoning"
+                ]
+              },
+              "source": {
+                "enum": [
+                  "provider.message.reasoning_summary",
+                  "provider.message.reasoning_explanation",
+                  "provider.message.reasoning_content",
+                  "provider.delta.reasoning_content"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "available",
+                  "truncated",
+                  "disabled",
+                  "not_returned",
+                  "redacted",
+                  "not_adapted"
+                ]
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "profile_id": {
+                "enum": [
+                  "aliyun_public_reasoning_v1",
+                  "ark_public_reasoning_v1",
+                  "ark_public_summary_v1",
+                  "deepseek_public_reasoning_v1"
+                ]
+              },
+              "protocol": {
+                "enum": [
+                  "openai_chat_completions"
+                ]
+              },
+              "profile_verification": {
+                "enum": [
+                  "administrator_declared"
+                ]
+              },
+              "model_revision": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "unavailable_reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "available"
+            ],
+            "additionalProperties": false
+          },
+          "finish_reason": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "completion_truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "parameters",
+          "mode"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "03",
+      "service": "app.agents.nodes",
+      "status": "needs_configuration",
+      "reason": "Requires configured module/model"
+    },
+    {
+      "type": "question_classifier",
+      "label": "问题分类",
+      "category": "intelligence",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "enum": [
+              "demo",
+              "model"
+            ]
+          },
+          "model_config_id": {
+            "type": "string"
+          },
+          "classes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "keywords": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "keywords"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "model_config_version": {
+            "type": "string"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "mode",
+          "classes"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "class_id": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "demo",
+              "model"
+            ]
+          },
+          "source_refs": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "reasoning": {
+            "type": "object",
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "kind": {
+                "enum": [
+                  "provider_summary",
+                  "provider_explanation",
+                  "provider_reasoning"
+                ]
+              },
+              "source": {
+                "enum": [
+                  "provider.message.reasoning_summary",
+                  "provider.message.reasoning_explanation",
+                  "provider.message.reasoning_content",
+                  "provider.delta.reasoning_content"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "available",
+                  "truncated",
+                  "disabled",
+                  "not_returned",
+                  "redacted",
+                  "not_adapted"
+                ]
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "profile_id": {
+                "enum": [
+                  "aliyun_public_reasoning_v1",
+                  "ark_public_reasoning_v1",
+                  "ark_public_summary_v1",
+                  "deepseek_public_reasoning_v1"
+                ]
+              },
+              "protocol": {
+                "enum": [
+                  "openai_chat_completions"
+                ]
+              },
+              "profile_verification": {
+                "enum": [
+                  "administrator_declared"
+                ]
+              },
+              "model_revision": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "unavailable_reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "available"
+            ],
+            "additionalProperties": false
+          },
+          "finish_reason": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "completion_truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "class_id",
+          "mode"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "dynamic"
+      ],
+      "owner": "03",
+      "service": "app.agents.nodes",
+      "status": "needs_configuration",
+      "reason": "Requires configured module/model"
+    },
+    {
+      "type": "document_extractor",
+      "label": "文档提取",
+      "category": "knowledge",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "chunk_size": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 2000
+          },
+          "chunk_overlap": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 200
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string"
+          },
+          "chunks": {
+            "type": "array"
+          },
+          "chunk_count": {
+            "type": "integer"
+          },
+          "text_length": {
+            "type": "integer"
+          },
+          "source_refs": {
+            "type": "array"
+          },
+          "extraction_method": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "file_id",
+          "chunks"
+        ],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "04",
+      "service": "app.finance.nodes",
+      "status": "supported",
+      "reason": "Explicit document IDs; text extraction/keyword retrieval only. PDF dependency/OCR status: /api/v1/documents/capabilities"
+    },
+    {
+      "type": "knowledge_retrieval",
+      "label": "知识检索",
+      "category": "knowledge",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "top_k": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "file_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "knowledge_base_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "version_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string"
+          },
+          "hits": {
+            "type": "array"
+          },
+          "source_refs": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "used_versions": {
+            "type": "array"
+          },
+          "used_chunks": {
+            "type": "array"
+          },
+          "snapshot_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "hits"
+        ],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "04",
+      "service": "app.finance.nodes",
+      "status": "supported",
+      "reason": "Explicit document IDs; text extraction/keyword retrieval only. PDF dependency/OCR status: /api/v1/documents/capabilities"
+    },
+    {
+      "type": "database_query",
+      "label": "结构化数据查询",
+      "category": "data",
+      "config_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "table_version_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "table_id",
+          "query"
+        ],
+        "properties": {
+          "table_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "query": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "select": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100
+              },
+              "filters": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "field"
+                  ],
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "op": {
+                      "enum": [
+                        "eq",
+                        "ne",
+                        "in",
+                        "gt",
+                        "gte",
+                        "lt",
+                        "lte"
+                      ]
+                    },
+                    "value": {}
+                  }
+                }
+              },
+              "group_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 8
+              },
+              "aggregates": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "op",
+                    "name"
+                  ],
+                  "properties": {
+                    "op": {
+                      "enum": [
+                        "count",
+                        "sum",
+                        "min",
+                        "max",
+                        "avg"
+                      ]
+                    },
+                    "field": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "order_by": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "field"
+                  ],
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "descending": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100000
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000
+              }
+            }
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "rows",
+          "columns",
+          "total",
+          "version_id",
+          "policy_version",
+          "source_refs"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array"
+          },
+          "columns": {
+            "type": "array"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "version_id": {
+            "type": "string"
+          },
+          "policy_version": {
+            "type": "integer"
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "04",
+      "service": "app.database.nodes",
+      "status": "supported",
+      "reason": "Controlled table IDs/fields only; caller data grants and row/column policy apply; no arbitrary SQL"
+    },
+    {
+      "type": "code",
+      "label": "代码执行",
+      "category": "advanced",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "enum": [
+              "python",
+              "javascript"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "unavailable",
+      "reason": "Unavailable: no isolated sandbox; API-process eval/exec/shell is prohibited",
+      "configurable": true
+    },
+    {
+      "type": "human_approval",
+      "label": "人工审批",
+      "category": "advanced",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "approver_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400
+          },
+          "allow_self": {
+            "type": "boolean"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "title",
+          "approver_ids",
+          "expires_seconds"
+        ],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          },
+          "approval_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved",
+          "approval_id"
+        ],
+        "additionalProperties": false
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "trigger",
+      "label": "定时/事件触发",
+      "category": "advanced",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "unavailable",
+      "reason": "Unavailable: durable external trigger scheduler is not implemented"
+    },
+    {
+      "type": "trigger_text",
+      "label": "文本消息",
+      "category": "trigger",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "message_field": {
+            "type": "string"
+          },
+          "attachments_field": {
+            "type": "string"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "object"
+          },
+          "query": {
+            "type": "object"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "message": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "trigger_image",
+      "label": "图片消息",
+      "category": "trigger",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "message_field": {
+            "type": "string"
+          },
+          "attachments_field": {
+            "type": "string"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "object"
+          },
+          "query": {
+            "type": "object"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "message": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "trigger_audio",
+      "label": "语音消息",
+      "category": "trigger",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "message_field": {
+            "type": "string"
+          },
+          "attachments_field": {
+            "type": "string"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "object"
+          },
+          "query": {
+            "type": "object"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "message": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "trigger_file",
+      "label": "文件消息",
+      "category": "trigger",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "message_field": {
+            "type": "string"
+          },
+          "attachments_field": {
+            "type": "string"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "object"
+          },
+          "query": {
+            "type": "object"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "message": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "trigger_mixed",
+      "label": "混合消息",
+      "category": "trigger",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "message_field": {
+            "type": "string"
+          },
+          "attachments_field": {
+            "type": "string"
+          },
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "object"
+          },
+          "query": {
+            "type": "object"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "message": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    },
+    {
+      "type": "transform",
+      "label": "字段转换",
+      "category": "transform",
+      "config_schema": {
+        "type": "object",
+        "properties": {
+          "input_mapping": {
+            "type": "object"
+          },
+          "output_mapping": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": true
+      },
+      "ports": [
+        "default"
+      ],
+      "owner": "01",
+      "service": null,
+      "status": "supported",
+      "reason": null
+    }
+  ],
+  "limits": {
+    "max_nodes": 64,
+    "max_edges": 256,
+    "max_steps": 512,
+    "max_iterations": 50,
+    "max_depth": 3,
+    "max_concurrency": 4,
+    "max_condition_depth": 3,
+    "max_conditions": 32,
+    "timeout_seconds": 120,
+    "node_output_bytes": 1048576,
+    "variable_pool_bytes": 4194304
+  }
+}

@@ -1,0 +1,418 @@
+{
+  "$defs": {
+    "FactQuery": {
+      "additionalProperties": true,
+      "properties": {
+        "entity": {
+          "default": "",
+          "title": "Entity",
+          "type": "string"
+        },
+        "periods": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Periods",
+          "type": "array"
+        },
+        "metric_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Metric Codes",
+          "type": "array"
+        },
+        "currency": {
+          "default": "CNY",
+          "title": "Currency",
+          "type": "string"
+        },
+        "unit": {
+          "default": "yuan",
+          "title": "Unit",
+          "type": "string"
+        },
+        "scope": {
+          "default": "consolidated",
+          "title": "Scope",
+          "type": "string"
+        },
+        "batch_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch Id"
+        }
+      },
+      "title": "FactQuery",
+      "type": "object"
+    },
+    "IterationTestContext": {
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "title": "Item"
+        },
+        "index": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "title": "IterationTestContext",
+      "type": "object"
+    },
+    "LoopTestContext": {
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "additionalProperties": true,
+          "title": "State",
+          "type": "object"
+        },
+        "index": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "LoopTestContext",
+      "type": "object"
+    },
+    "MessageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "text",
+            "image",
+            "audio",
+            "file",
+            "mixed"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 16000,
+          "title": "Text",
+          "type": "string"
+        },
+        "attachment_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Attachment Ids",
+          "type": "array"
+        },
+        "inputs": {
+          "additionalProperties": true,
+          "title": "Inputs",
+          "type": "object"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "MessageEnvelope",
+      "type": "object"
+    },
+    "NodeTest": {
+      "additionalProperties": false,
+      "properties": {
+        "node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Node Id",
+          "type": "string"
+        },
+        "scope_path": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Scope Path",
+          "type": "array"
+        },
+        "variables": {
+          "$ref": "#/$defs/TestVariables"
+        }
+      },
+      "required": [
+        "node_id"
+      ],
+      "title": "NodeTest",
+      "type": "object"
+    },
+    "TestVariables": {
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "additionalProperties": true,
+          "title": "Nodes",
+          "type": "object"
+        },
+        "vars": {
+          "additionalProperties": true,
+          "title": "Vars",
+          "type": "object"
+        },
+        "iteration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IterationTestContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "loop": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoopTestContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "TestVariables",
+      "type": "object"
+    },
+    "WorkflowDefinition": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "name": {
+          "default": "新工作流",
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "default": "1.0.0",
+          "title": "Version",
+          "type": "string"
+        },
+        "mode": {
+          "default": "demo",
+          "enum": [
+            "demo",
+            "model"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "default": "1.0",
+          "enum": [
+            "1.0",
+            "2.0"
+          ],
+          "title": "Schemaversion",
+          "type": "string"
+        },
+        "input_schema": {
+          "additionalProperties": true,
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "variables": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Variables",
+          "type": "object"
+        },
+        "limits": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Limits",
+          "type": "object"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/WorkflowNode"
+          },
+          "title": "Nodes",
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/WorkflowEdge"
+          },
+          "title": "Edges",
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "title": "WorkflowDefinition",
+      "type": "object"
+    },
+    "WorkflowEdge": {
+      "additionalProperties": true,
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "source_port": {
+          "default": "default",
+          "title": "Source Port",
+          "type": "string"
+        },
+        "target_port": {
+          "default": "default",
+          "title": "Target Port",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ],
+      "title": "WorkflowEdge",
+      "type": "object"
+    },
+    "WorkflowNode": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "config": {
+          "additionalProperties": true,
+          "title": "Config",
+          "type": "object"
+        },
+        "inputs": {
+          "additionalProperties": true,
+          "title": "Inputs",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "WorkflowNode",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "workflow": {
+      "$ref": "#/$defs/WorkflowDefinition"
+    },
+    "agent_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Agent Id"
+    },
+    "revision": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Revision"
+    },
+    "inputs": {
+      "additionalProperties": true,
+      "title": "Inputs",
+      "type": "object"
+    },
+    "prompt": {
+      "default": "",
+      "maxLength": 16000,
+      "title": "Prompt",
+      "type": "string"
+    },
+    "query": {
+      "$ref": "#/$defs/FactQuery"
+    },
+    "message": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MessageEnvelope"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "node_test": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NodeTest"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "workflow"
+  ],
+  "title": "DebugRunCreate",
+  "type": "object"
+}

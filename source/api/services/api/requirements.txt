@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+sqlalchemy
+httpx
+langgraph==1.2.15
+langchain==1.4.6
+langgraph-checkpoint-sqlite==3.1.2
+aiosqlite==0.22.1
+python-multipart
+jsonschema
+openpyxl
+python-docx
+XlsxWriter
+Pillow
+cryptography
+psycopg[binary]
+pypdf

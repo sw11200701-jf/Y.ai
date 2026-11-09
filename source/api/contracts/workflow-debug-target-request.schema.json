@@ -1,0 +1,173 @@
+{
+  "$defs": {
+    "WorkflowDefinition": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "name": {
+          "default": "新工作流",
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "default": "1.0.0",
+          "title": "Version",
+          "type": "string"
+        },
+        "mode": {
+          "default": "demo",
+          "enum": [
+            "demo",
+            "model"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "default": "1.0",
+          "enum": [
+            "1.0",
+            "2.0"
+          ],
+          "title": "Schemaversion",
+          "type": "string"
+        },
+        "input_schema": {
+          "additionalProperties": true,
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "variables": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Variables",
+          "type": "object"
+        },
+        "limits": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Limits",
+          "type": "object"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/WorkflowNode"
+          },
+          "title": "Nodes",
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/WorkflowEdge"
+          },
+          "title": "Edges",
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "title": "WorkflowDefinition",
+      "type": "object"
+    },
+    "WorkflowEdge": {
+      "additionalProperties": true,
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "source_port": {
+          "default": "default",
+          "title": "Source Port",
+          "type": "string"
+        },
+        "target_port": {
+          "default": "default",
+          "title": "Target Port",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ],
+      "title": "WorkflowEdge",
+      "type": "object"
+    },
+    "WorkflowNode": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "config": {
+          "additionalProperties": true,
+          "title": "Config",
+          "type": "object"
+        },
+        "inputs": {
+          "additionalProperties": true,
+          "title": "Inputs",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "WorkflowNode",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "workflow": {
+      "$ref": "#/$defs/WorkflowDefinition"
+    },
+    "node_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Node Id",
+      "type": "string"
+    },
+    "scope_path": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 3,
+      "title": "Scope Path",
+      "type": "array"
+    }
+  },
+  "required": [
+    "workflow",
+    "node_id"
+  ],
+  "title": "DebugTargetRequest",
+  "type": "object"
+}

@@ -1,0 +1,108 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "source_graph_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Source Graph Sha256",
+      "type": "string"
+    },
+    "target_key": {
+      "title": "Target Key",
+      "type": "string"
+    },
+    "node_id": {
+      "title": "Node Id",
+      "type": "string"
+    },
+    "node_type": {
+      "title": "Node Type",
+      "type": "string"
+    },
+    "scope_path": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Scope Path",
+      "type": "array"
+    },
+    "scope_type": {
+      "anyOf": [
+        {
+          "enum": [
+            "iteration",
+            "loop"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Scope Type"
+    },
+    "workflow_input_schema": {
+      "additionalProperties": true,
+      "title": "Workflow Input Schema",
+      "type": "object"
+    },
+    "input_schema": {
+      "additionalProperties": true,
+      "title": "Input Schema",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": true,
+      "title": "Output Schema",
+      "type": "object"
+    },
+    "upstream_schemas": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Upstream Schemas",
+      "type": "object"
+    },
+    "variables_schema": {
+      "additionalProperties": true,
+      "title": "Variables Schema",
+      "type": "object"
+    },
+    "scope_schema": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Scope Schema"
+    },
+    "limits": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Limits",
+      "type": "object"
+    }
+  },
+  "required": [
+    "source_graph_sha256",
+    "target_key",
+    "node_id",
+    "node_type",
+    "scope_path",
+    "scope_type",
+    "workflow_input_schema",
+    "input_schema",
+    "output_schema",
+    "upstream_schemas",
+    "variables_schema",
+    "scope_schema",
+    "limits"
+  ],
+  "title": "DebugTargetDescription",
+  "type": "object"
+}

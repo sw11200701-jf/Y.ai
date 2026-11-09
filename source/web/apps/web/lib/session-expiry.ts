@@ -1,0 +1,1 @@
+export function sessionExpiryDelay(session:{persistent?:boolean;expires_at?:string|null},now=Date.now()):number|undefined{if(session.persistent||!session.expires_at)return;const remaining=Date.parse(session.expires_at)-now;if(!Number.isFinite(remaining))return;return Math.min(2147483647,Math.max(0,remaining));}

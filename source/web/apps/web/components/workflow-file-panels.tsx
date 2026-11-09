@@ -1,0 +1,14 @@
+'use client';
+import {Alert,Empty,Select,Space,Tag} from 'antd';
+import type {FileBindings,FileDiagnostic,FileBindingRequirement,WorkflowFilePreview} from '@/lib/workflow-file-view';
+import styles from './workflow-file-io.module.css';
+
+export function WorkflowFileReport({items}:{items:FileDiagnostic[]}){
+ return <section className={styles.report} aria-label="工作流文件兼容报告"><h3>兼容与安全检查</h3>{items.length===0?<p className="subtle">服务端未报告兼容问题；确认前仍会重新检查权限和资源绑定。</p>:items.map((item,index)=><Alert key={`${item.code}:${index}`} type={item.severity==='blocking'?'error':item.severity==='warning'?'warning':'info'} showIcon message={item.message} description={<Space wrap><Tag>{item.severity==='blocking'?'阻止操作':item.severity==='warning'?'需注意':'说明'}</Tag>{item.nodeId&&<span>节点：{item.nodeId}</span>}{item.field&&<span>字段：{item.field}</span>}<small>检查代码：{item.code}</small></Space>}/>)}</section>;
+}
+export function WorkflowFileBindings({requirements,value,onChange,disabled=false}:{requirements:FileBindingRequirement[];value:FileBindings;onChange:(value:FileBindings)=>void;disabled?:boolean}){
+ return <section className={styles.bindings} aria-label="工作流资源映射"><h3>重新绑定当前可访问的资源</h3><p className="hint">文件中的资源标识和供应商名称仅供迁移参考，不会授予访问权或自动安装插件。</p>{requirements.length===0?<p className="subtle">当前检查没有要求重新绑定的资源。</p>:requirements.map(item=>{const chosen=value[item.key];const selection=item.multiple&&Array.isArray(chosen)?chosen.filter(id=>item.choices.some(choice=>choice.id===id)):typeof chosen==='string'&&item.choices.some(choice=>choice.id===chosen)?chosen:undefined;return <article className={styles.binding} key={item.key}><label>{item.label}{item.required?'（必选）':'（可选）'}{item.nodeId&&<small>节点 {item.nodeId}</small>}<Select aria-label={`映射资源 ${item.key}`} mode={item.multiple?'multiple':undefined} allowClear showSearch optionFilterProp="label" disabled={disabled||!item.choices.length} placeholder={item.choices.length?'选择当前可访问的资源':'没有可选择的授权资源'} value={selection} options={item.choices.map(choice=>({value:choice.id,label:choice.label}))} onChange={id=>{const next={...value};if(id&&(!Array.isArray(id)||id.length))next[item.key]=id;else delete next[item.key];onChange(next);}}/></label>{!item.choices.length&&<p className="hint">当前目录没有可用于此项的资源。请由管理员配置或授权后重新检查；不据此判断文件中的资源是否存在。</p>}</article>;})}</section>;
+}
+export function WorkflowFileSummary({preview}:{preview:WorkflowFilePreview}){
+ return <section className={styles.summary} aria-label="工作流转换预览"><Space wrap><Tag>{preview.formatLabel}</Tag><Tag>{preview.versionLabel}</Tag><span>{preview.nodeCount} 个节点 · {preview.edgeCount} 条连线</span></Space><h3>{preview.name||'待命名工作流'}</h3>{preview.nodes.length?<ol className={styles.nodes}>{preview.nodes.map(node=><li key={node.id}><strong>{node.label||node.id}</strong><small>{node.typeLabel} · {node.id}</small></li>)}</ol>:<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有可预览的图节点，请查看检查报告。"/>}<p className="hint">这里只展示经过检查的结构摘要。预览不会执行节点、调用模型或外部接口。</p></section>;
+}

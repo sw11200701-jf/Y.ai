@@ -1,0 +1,120 @@
+{
+  "id": null,
+  "name": "Annual financial analysis",
+  "version": "1.0.0",
+  "mode": "demo",
+  "schemaVersion": "2.0",
+  "input_schema": {
+    "type": "object"
+  },
+  "variables": {},
+  "limits": {
+    "max_steps": 256,
+    "timeout_seconds": 120
+  },
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "config": {},
+      "inputs": {}
+    },
+    {
+      "id": "repeat",
+      "type": "iteration",
+      "config": {
+        "body": {
+          "id": null,
+          "name": "Annual financial analysis",
+          "version": "1.0.0",
+          "mode": "demo",
+          "schemaVersion": "2.0",
+          "input_schema": {
+            "type": "object"
+          },
+          "variables": {},
+          "limits": {
+            "max_steps": 256,
+            "timeout_seconds": 120
+          },
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "inputs": {}
+            },
+            {
+              "id": "convert",
+              "type": "template",
+              "config": {
+                "template": "Item {{ item }}"
+              },
+              "inputs": {
+                "item": {
+                  "$ref": "iteration.item"
+                }
+              }
+            },
+            {
+              "id": "answer",
+              "type": "answer",
+              "config": {},
+              "inputs": {
+                "text": {
+                  "$ref": "nodes.convert.text"
+                }
+              }
+            }
+          ],
+          "edges": [
+            {
+              "source": "start",
+              "target": "convert",
+              "source_port": "default",
+              "target_port": "default"
+            },
+            {
+              "source": "convert",
+              "target": "answer",
+              "source_port": "default",
+              "target_port": "default"
+            }
+          ]
+        },
+        "max_iterations": 3,
+        "timeout_seconds": 1
+      },
+      "inputs": {
+        "items": [
+          "one",
+          "two"
+        ]
+      }
+    },
+    {
+      "id": "answer",
+      "type": "answer",
+      "config": {},
+      "inputs": {
+        "value": {
+          "$ref": "nodes.repeat.items"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "start",
+      "target": "repeat",
+      "source_port": "default",
+      "target_port": "default"
+    },
+    {
+      "source": "repeat",
+      "target": "answer",
+      "source_port": "default",
+      "target_port": "default"
+    }
+  ]
+}

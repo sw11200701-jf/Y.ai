@@ -1,0 +1,100 @@
+{
+  "schema_version": "workflow-variables-v1",
+  "items": [
+    {
+      "ref": "system.run_id",
+      "label": "本次运行标识",
+      "schema": {
+        "type": "string"
+      },
+      "readonly": true,
+      "source": "server"
+    },
+    {
+      "ref": "system.tenant_id",
+      "label": "当前租户",
+      "schema": {
+        "type": "string"
+      },
+      "readonly": true,
+      "source": "server"
+    },
+    {
+      "ref": "system.workspace_id",
+      "label": "当前工作空间",
+      "schema": {
+        "type": "string"
+      },
+      "readonly": true,
+      "source": "server"
+    },
+    {
+      "ref": "user.id",
+      "label": "当前用户标识",
+      "schema": {
+        "type": "string"
+      },
+      "readonly": true,
+      "source": "server"
+    },
+    {
+      "ref": "user.role",
+      "label": "当前用户角色",
+      "schema": {
+        "type": "string",
+        "enum": [
+          "super_admin",
+          "admin",
+          "member",
+          "service"
+        ]
+      },
+      "readonly": true,
+      "source": "server"
+    },
+    {
+      "ref": "user.permissions",
+      "label": "当前功能权限",
+      "schema": {
+        "type": "array",
+        "maxItems": 128,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "enum": [
+            "accounts.manage",
+            "applications.keys.manage",
+            "applications.manage",
+            "applications.publish",
+            "applications.read",
+            "applications.records.read",
+            "applications.runs.control",
+            "chunker.config.manage",
+            "chunker.config.read",
+            "chunker.config.view",
+            "models.manage",
+            "page.accounts",
+            "page.ai",
+            "page.applications",
+            "page.database",
+            "page.knowledge",
+            "page.models",
+            "page.plugins",
+            "page.roles",
+            "page.runs",
+            "page.workbench",
+            "platform.api.publish",
+            "platform.keys.admin",
+            "platform.keys.manage",
+            "resources.execute",
+            "roles.manage",
+            "runs.approve",
+            "spaces.manage"
+          ]
+        }
+      },
+      "readonly": true,
+      "source": "server"
+    }
+  ]
+}

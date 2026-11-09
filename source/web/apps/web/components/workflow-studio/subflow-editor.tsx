@@ -1,0 +1,96 @@
+'use client';
+import { useMemo, useRef, useState, type ComponentProps } from 'react';
+import { Modal } from 'antd';
+import { Background, Controls, ReactFlow, ReactFlowProvider, useReactFlow, type Connection, type EdgeChange, type NodeChange } from '@xyflow/react';
+import { availableVariables, configuredInputSchema, connectionError, edgeKey, isEntryType, newNode, outputPorts, positionOf } from '@/lib/workflow/adapter';
+import type { MessageDraft, NodeRegistry, ObjectValue, StudioResources, VariableOption, WorkflowDefinition, WorkflowNode } from '@/lib/workflow/types';
+import { NodeLibrary } from './node-library';
+import { StudioNode, type FlowNode } from './studio-node';
+import { SchemaFields } from './schema-fields';
+import { SchemaDefinition } from './schema-definition';
+import { NodeDraftPanel } from './node-draft-panel';
+import {mergeSavedNode,withNodeLayout,withWorkflowLayout,type NodeSettingsChange} from '@/lib/workflow/node-draft';
+import {scopeWorkflow} from '@/lib/workflow/scoped-debug';
+import { KnowledgePicker } from './knowledge-picker';
+import { DatabaseQuery } from './database-query';
+import LlmEditor from './llm-editor';
+import { LoopCondition } from './loop-condition';
+import { ConditionEditor } from './condition-editor';
+import { OutputOptions } from './output-options';
+import { counterLoop, newSubflow } from '@/lib/workflow/subflow';
+import styles from './studio.module.css';
+
+const nodeTypes = { studio: StudioNode };
+function ChildCanvas({ value, kind, registry, resources, onChange, onValidity, depth, knowledgeScope, dataScope, canManageModels, onManageModels, readonlyVariables = [], scopeValue, scopeLabels, nodePath, onTestNode, testBusy, onPersistBody, onPersistSettings, persistedWorkflow, currentMessage }: { value: WorkflowDefinition; kind: 'iteration' | 'loop'; registry: NodeRegistry; resources: StudioResources; onChange: (body: WorkflowDefinition) => void; onValidity: (valid: boolean) => void; depth: number; knowledgeScope?: ObjectValue[]; dataScope?: ObjectValue[]; readonlyVariables?: VariableOption[]; canManageModels?: boolean; onManageModels?: () => void; scopeValue?: unknown; scopeLabels?:ObjectValue; nodePath: string[]; onTestNode?: (node: WorkflowNode, scopePath: string[]) => void; testBusy?: boolean; persistedWorkflow?:WorkflowDefinition; currentMessage?:MessageDraft; onPersistBody?:(body:WorkflowDefinition)=>Promise<void>; onPersistSettings?:(change:NodeSettingsChange)=>Promise<WorkflowDefinition> }) {
+  const [nodeDraftDirty,setNodeDraftDirty]=useState(false); const [selected, setSelected] = useState(''); const [search, setSearch] = useState(''); const [error, setError] = useState(''); const [childOpen, setChildOpen] = useState(false);
+  const [measurements, setMeasurements] = useState<Record<string, { width: number; height: number }>>({});
+  const latestValue=useRef(value);latestValue.current=value;
+  const invalid = useRef(new Set<string>());
+  const valid = (key: string) => (ok: boolean) => { ok ? invalid.current.delete(key) : invalid.current.add(key); onValidity(invalid.current.size === 0); };
+  const { screenToFlowPosition, fitView } = useReactFlow<FlowNode>();
+  const area = useRef<HTMLDivElement>(null);
+  const node = value.nodes.find(node => node.id === selected);
+  const def = registry.items.find(item => item.type === node?.type);
+  const catalog = useMemo(() => ({ ...registry, items: registry.items.filter(item => !isEntryType(item.type) || ['start', 'input'].includes(item.type)).map(item => ['iteration', 'loop'].includes(item.type) && depth >= 3 ? { ...item, status: 'unavailable' as const, reason: '子流程嵌套最多三层' } : item) }), [registry, depth]);
+  const local: VariableOption[] = kind === 'iteration' ? [{ ref: 'iteration.item', label: '当前迭代项', type: 'any' }, { ref: 'iteration.index', label: '当前迭代序号', type: 'integer' }] : [{ ref: 'loop.state', label: '当前循环状态', type: 'object' }, { ref: 'loop.index', label: '当前循环序号', type: 'integer' }];
+  if (scopeValue && typeof scopeValue === 'object' && !Array.isArray(scopeValue) && !('$ref' in scopeValue)) Object.entries(scopeValue).forEach(([key, value]) => local.push({ ref: `${kind === 'iteration' ? 'iteration.item' : 'loop.state'}.${key}`, label: `${kind === 'iteration' ? '当前迭代项' : '当前循环状态'} · ${scopeLabels?.[key] || key}`, type: Array.isArray(value) ? 'array' : value === null ? 'any' : typeof value }));
+  const variables = node ? [...availableVariables(value, node.id, registry, readonlyVariables), ...local] : local;
+  const testReason = invalid.current.size ? '请先修正子流程中尚未完成的输入' : !node ? '请先选择节点' : !def ? '节点能力目录未包含此节点' : def.status === 'unavailable' ? def.reason || '当前节点未开放' : (def.config_schema.required || []).some(key => node.config[key] === undefined || node.config[key] === '') ? '请先填写当前节点必填配置' : (def.input_schema.required || []).some(key => node.inputs?.[key] === undefined || node.inputs?.[key]?.$ref === '') ? '请先填写当前节点必填输入或引用' : !onTestNode ? '内层节点测试尚未接入' : '';
+  const updateNode = (patch: Partial<WorkflowNode>) => onChange({ ...value, nodes: value.nodes.map(item => item.id === selected ? { ...item, ...patch } : item) });
+  const add = (definition: typeof registry.items[number], position?: { x: number; y: number }) => {
+    if (definition.status === 'unavailable') return;
+    if (value.nodes.length >= (registry.limits.max_nodes || 64)) { setError('子流程已达到节点上限'); return; }
+    if (isEntryType(definition.type) && value.nodes.some(item => isEntryType(item.type))) { setError('子流程只需一个开始节点'); return; }
+    const rect = area.current?.getBoundingClientRect();
+    const next = newNode(definition, position || screenToFlowPosition({ x: (rect?.left || 0) + (rect?.width || 600) / 2, y: (rect?.top || 0) + (rect?.height || 400) / 2 }));
+    onChange({ ...value, nodes: [...value.nodes, next] }); setSelected(next.id);
+  };
+  const nodes: FlowNode[] = value.nodes.map((item, index) => ({ id: item.id, type: 'studio', position: positionOf(item, index), selected: item.id === selected, measured: measurements[item.id], data: { node: item, definition: registry.items.find(def => def.type === item.type), ports: outputPorts(item, registry.items.find(def => def.type === item.type)) } }));
+  const nodesChange = (changes: NodeChange<FlowNode>[]) => {
+    const dimensions = changes.filter(change => change.type === 'dimensions');
+    if (dimensions.length) setMeasurements(previous => { let next = previous; dimensions.forEach(change => { if (change.type === 'dimensions' && change.dimensions && (previous[change.id]?.width !== change.dimensions.width || previous[change.id]?.height !== change.dimensions.height)) { if (next === previous) next = { ...previous }; next[change.id] = change.dimensions; } }); return next; });
+    const selection = changes.find(change => change.type === 'select' && change.selected); if (selection?.type === 'select') setSelected(selection.id);
+    const removed = new Set(changes.filter(change => change.type === 'remove').map(change => change.id));
+    if (!removed.size && !changes.some(change => change.type === 'position' && change.position)) return;
+    onChange({ ...value, nodes: value.nodes.filter(item => !removed.has(item.id)).map(item => { const change = changes.find(change => change.type === 'position' && change.id === item.id); return change?.type === 'position' && change.position ? { ...item, ui: { ...item.ui, position: change.position } } : item; }), edges: value.edges.filter(edge => !removed.has(edge.source) && !removed.has(edge.target)) });
+  };
+  const edgesChange = (changes: EdgeChange[]) => { const removed = new Set(changes.filter(change => change.type === 'remove').map(change => change.id)); if (removed.size) onChange({ ...value, edges: value.edges.filter(edge => !removed.has(edgeKey(edge))) }); };
+  const connect = (connection: Connection) => { const edge = { source: connection.source, target: connection.target, source_port: connection.sourceHandle || 'default', target_port: connection.targetHandle || 'default' }; const reason = connectionError(value, edge, registry); if (reason) setError(reason); else { setError(''); onChange({ ...value, edges: [...value.edges, edge] }); } };
+  return <><p className={styles.hint}>子流程继承只读业务输入，拥有独立的节点与全局变量；{kind === 'iteration' ? '可引用当前迭代项和序号。' : '可引用当前循环状态和序号，输出字段成为下一轮状态。'}保存节点配置立即持久化本节点；新增节点会同时保存所属子流程结构。其余画布改动由“保存子流程配置”提交。</p>{error && <p role="alert" className={styles.errorText}>{error}</p>}<div className={styles.subflowWorkspace}>
+    <NodeLibrary scope="subflow" catalog={catalog} connected count={value.nodes.length} legacy={false} busy={false} search={search} onSearch={setSearch} onRefresh={() => {}} onAdd={add} />
+    <div ref={area} className={styles.subflowCanvas} onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={e => { e.preventDefault(); const definition = catalog.items.find(def => def.type === e.dataTransfer.getData('application/workflow-node')); if (definition) add(definition, screenToFlowPosition({ x: e.clientX, y: e.clientY })); }}>
+      <div className={styles.canvasTools}><button onClick={() => fitView({ padding: .2, maxZoom: 1 })}>适应子流程视图</button><button disabled={!node} onClick={() => { onChange({ ...value, nodes: value.nodes.filter(item => item.id !== selected), edges: value.edges.filter(edge => edge.source !== selected && edge.target !== selected) }); setSelected(''); }}>删除节点</button></div>
+      <ReactFlow<FlowNode> nodes={nodes} edges={value.edges.map(edge => ({ ...edge, id: edgeKey(edge), sourceHandle: edge.source_port || 'default', targetHandle: edge.target_port || 'default' }))} nodeTypes={nodeTypes} onNodesChange={nodesChange} onEdgesChange={edgesChange} onNodeClick={(_, node) => setSelected(node.id)} onConnect={connect} onPaneClick={() => setSelected('')} fitView fitViewOptions={{ padding: .2, maxZoom: 1 }} minZoom={.15} maxZoom={2}><Background gap={24} /><Controls showInteractive={false} /></ReactFlow>
+    </div>
+    <aside className={styles.subflowInspector}>{node ? <div key={node.id}><h3>{node.ui?.label || def?.label || node.id}</h3><button disabled={Boolean(testReason) || testBusy || nodeDraftDirty} title={testReason || "仅测试当前子流程节点"} onClick={() => onTestNode?.(node, [...nodePath])}>▷ 测试此节点</button>{testReason && <p className={styles.hint}>{testReason}</p>}<NodeDraftPanel currentMessage={currentMessage} saveScopeNote="已保存的节点仅提交本节点；新增节点保存会同时提交当前所属子流程结构。" key={node.id} node={node} workflow={value} registry={registry} resources={resources} variables={variables} onCommit={async(next,change)=>{if(!onPersistSettings)throw Error('节点原子保存尚未接入，请重新打开');const saved=await onPersistSettings({...change,scope_path:nodePath});const stored=scopeWorkflow(saved,nodePath);onChange(mergeSavedNode(latestValue.current,stored,{...change,scope_path:[]}));}} onCancel={()=>setSelected('')} onDirtyChange={dirty=>{setNodeDraftDirty(dirty);onValidity(!dirty&&invalid.current.size===0);}} knowledgeScope={knowledgeScope} dataScope={dataScope} canManageModels={canManageModels} onManageModels={onManageModels}/>
+      {['iteration', 'loop'].includes(node.type) && <><button disabled={depth >= 3 || nodeDraftDirty} onClick={() => setChildOpen(true)}>编辑嵌套子流程</button>{childOpen && <SubflowEditor currentMessage={currentMessage} persistedWorkflow={persistedWorkflow} graphSha256={persistedWorkflow?.graph_sha256 || value.graph_sha256} onPersistSettings={onPersistSettings} onPersistNode={async(next,expected)=>{if(!onPersistSettings)throw Error('节点原子保存尚未接入');const saved=await onPersistSettings({node_id:next.id,node:next,scope_path:nodePath,expected_graph_sha256:expected});onChange(withWorkflowLayout(scopeWorkflow(saved,nodePath),latestValue.current));return saved;}} open node={node} registry={registry} resources={resources} parent={value} depth={depth + 1} nodePath={[...nodePath, node.id]} onRepeatChange={updateNode} onTestNode={onTestNode} testBusy={testBusy} onChange={body => updateNode({ config: { ...node.config, body } })} onValidity={valid(`${node.id}-body`)} onClose={() => {setChildOpen(false);setSelected('');}} container={() => area.current?.closest('[role=dialog]') as HTMLElement || document.body} knowledgeScope={knowledgeScope} dataScope={dataScope} readonlyVariables={readonlyVariables} canManageModels={canManageModels} onManageModels={onManageModels} />}</>}
+    </div> : <><p className={styles.hint}>选择节点配置输入、参数和输出。</p><SchemaDefinition label="子流程全局变量" value={{ type: 'object', properties: value.variables || {} }} onChange={schema => onChange({ ...value, variables: schema.properties || {} })} /></>}</aside>
+  </div></>;
+}
+function SubflowDraftEditor({ open, node, parent, registry, resources, onChange, onValidity, onClose, container, depth = 1, knowledgeScope, dataScope, canManageModels, onManageModels, readonlyVariables = [], nodePath = [node.id], onRepeatChange, onTestNode, testBusy, onSave, onPersistNode, onPersistSettings, graphSha256, persistedWorkflow, currentMessage, saveError, saving }: { currentMessage?:MessageDraft; persistedWorkflow?:WorkflowDefinition; graphSha256?:string;onPersistSettings?:(change:NodeSettingsChange)=>Promise<WorkflowDefinition>; saveError?:string; saving?:boolean; onPersistNode?:(node:WorkflowNode,expected?:string)=>Promise<WorkflowDefinition|void>; onSave?:()=>void; open: boolean; node: WorkflowNode; parent: WorkflowDefinition; registry: NodeRegistry; resources: StudioResources; onChange: (body: WorkflowDefinition) => void; onValidity: (valid: boolean) => void; onClose: () => void; container: () => HTMLElement; depth?: number; onTestNode?: (node: WorkflowNode, scopePath: string[]) => void; testBusy?: boolean; nodePath?: string[]; onRepeatChange?: (patch: Partial<WorkflowNode>) => void; knowledgeScope?: ObjectValue[]; dataScope?: ObjectValue[]; readonlyVariables?: VariableOption[]; canManageModels?: boolean; onManageModels?: () => void }) {
+  const body = node.config.body;
+  const [bodyValid, setBodyValid] = useState(true);
+  const reportValidity = (valid: boolean) => { setBodyValid(valid); onValidity(valid); };
+  const validShape = body && body.schemaVersion === '2.0' && Array.isArray(body.nodes) && Array.isArray(body.edges);
+  return <Modal open={open} title={`${node.ui?.label || node.id} · 可视子流程`} width="94vw" footer={null} getContainer={container} onCancel={onClose} closable keyboard maskClosable={false}><div className={styles.subflowDialog}>{saveError&&<p role="alert">{saveError}</p>}{saving&&<p>正在保存子流程…</p>}<p className={styles.hint}>子流程编辑是独立草稿；先保存子流程配置，再进行单节点测试。取消丢弃尚未保存的改动；已点击“保存节点配置”的内容已写入服务器。</p><details className={styles.details}><summary>当前子流程路径</summary><code>{nodePath.join(" / ")}</code></details>
+    {validShape ? <ReactFlowProvider><ChildCanvas currentMessage={currentMessage} persistedWorkflow={persistedWorkflow} onPersistSettings={onPersistSettings} onPersistBody={async body=>{if(!onPersistNode)throw Error('子流程持久保存尚未接入，请取消后重新打开');await onPersistNode({...node,config:{...node.config,body}});}} value={body} nodePath={nodePath} onTestNode={onTestNode} testBusy={testBusy} kind={node.type as 'iteration' | 'loop'} registry={registry} resources={resources} onChange={onChange} onValidity={reportValidity} depth={depth} knowledgeScope={knowledgeScope} dataScope={dataScope} readonlyVariables={readonlyVariables} canManageModels={canManageModels} onManageModels={onManageModels} scopeLabels={node.ui?.field_labels} scopeValue={node.type === 'iteration' ? Array.isArray(node.inputs?.items) ? node.inputs.items[0] : undefined : node.inputs?.state ?? node.config.state} /></ReactFlowProvider> : body !== undefined ? <p className={styles.warning}>已有高级子流程结构已保留。当前可视入口仅支持完整的 v2 节点与连线结构，请通过高级兼容明确处理原结构。</p> : <div><p className={styles.hint}>{node.type === 'iteration' ? '创建后默认将当前迭代项映射到子流程输出，可继续添加模型或处理步骤。' : '创建后把已有初始状态字段映射为本轮输出，可继续添加处理步骤。'}</p><button className={styles.primary} onClick={() => onChange(newSubflow(parent, node))}>创建可视子流程</button>{node.type === 'loop' && onRepeatChange && node.inputs?.state === undefined && node.config.state === undefined && node.config.until === undefined && <><p className={styles.hint}>也可从计数循环开始：初始0，每轮递增1，达到3后结束；创建后可在普通表单中修改。</p><button onClick={() => onRepeatChange(counterLoop(parent, node))}>创建三次计数循环</button></>}</div>}
+    {!bodyValid && <p className={styles.errorText}>请先保存或取消当前节点草稿，并修正未完成的输入，再保存子流程；也可直接取消本次子流程编辑。</p>}<div className={styles.linkedActions}><button className={styles.primary} disabled={!bodyValid || saving} onClick={onSave}>保存子流程配置</button><button onClick={onClose}>取消</button></div>
+  </div></Modal>;
+}
+
+/** Nested graphs and starter creation remain local until explicit confirmation. */
+export function SubflowEditor(props:Omit<ComponentProps<typeof SubflowDraftEditor>,'onSave'>){
+ const [draft,setDraft]=useState(()=>JSON.parse(JSON.stringify(props.node)) as WorkflowNode);const graphSha=useRef(props.graphSha256);const persistedRoot=useRef(props.persistedWorkflow || props.parent);const persistSettings=async(change:NodeSettingsChange):Promise<WorkflowDefinition>=>{
+  if(!props.onPersistSettings)throw Error('节点原子保存尚未接入');
+  const ownPath=(props.nodePath||[draft.id]).slice(0,-1);let known=false;try{known=scopeWorkflow(persistedRoot.current,change.scope_path).nodes.some(node=>node.id===change.node_id);}catch{}
+  let request=change;
+  if(!known && (change.node_id!==draft.id || JSON.stringify(change.scope_path)!==JSON.stringify(ownPath))){
+    const container=JSON.parse(JSON.stringify(draft)) as WorkflowNode;const local={...props.parent,nodes:[container],edges:[]};
+    const scope=scopeWorkflow(local,change.scope_path.slice(ownPath.length));scope.nodes=scope.nodes.map(node=>node.id===change.node_id?withNodeLayout(change.node,node,change.include_body_layout):node);if(Object.hasOwn(change,'input_schema'))scope.input_schema=change.input_schema;
+    request={node_id:container.id,node:container,scope_path:ownPath};
+  }
+  const saved=await props.onPersistSettings({...request,expected_graph_sha256:change.expected_graph_sha256||graphSha.current});graphSha.current=saved.graph_sha256;persistedRoot.current=saved;return saved;
+ };
+ const [valid,setValid]=useState(true);const [saving,setSaving]=useState(false);const [saveError,setSaveError]=useState('');const savePending=useRef(false);
+ return <SubflowDraftEditor {...props} saving={saving} saveError={saveError} onClose={()=>{if(!savePending.current)props.onClose();}} testBusy={props.testBusy || JSON.stringify(draft)!==JSON.stringify(props.node)} node={draft} persistedWorkflow={persistedRoot.current} graphSha256={graphSha.current} onValidity={setValid} onRepeatChange={patch=>setDraft(previous=>({...previous,...patch}))} onChange={body=>setDraft(previous=>({...previous,config:{...previous.config,body}}))} onPersistSettings={persistSettings} onPersistNode={props.onPersistNode} onSave={async()=>{if(!valid||savePending.current)return;savePending.current=true;setSaving(true);setSaveError('');try{if(props.onPersistSettings)await persistSettings({include_body_layout:true,node_id:draft.id,node:draft,scope_path:(props.nodePath||[draft.id]).slice(0,-1),expected_graph_sha256:graphSha.current});else if(props.onPersistNode)await props.onPersistNode(draft,graphSha.current);else throw Error('子流程持久保存尚未接入，请取消后重新打开');props.onClose();}catch(error){setSaveError((error as Error).message);}finally{savePending.current=false;setSaving(false);}}}/>;
+}

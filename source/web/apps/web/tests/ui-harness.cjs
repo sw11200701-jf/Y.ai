@@ -1,0 +1,10 @@
+const React=require('react');
+const host=name=>props=>React.createElement(name,props,props.children);
+const ui=Object.fromEntries(['Alert','Button','Select','Space','Tag','Skeleton','InputNumber','Empty','Checkbox','Switch','Spin','Pagination'].map(n=>[n,host('ui-'+n)]));
+ui.Input=Object.assign(host('ui-Input'),{TextArea:host('ui-TextArea'),Search:host('ui-InputSearch'),Password:host('ui-Password')});ui.Empty.PRESENTED_IMAGE_SIMPLE='empty';
+ui.Form=host('ui-Form');ui.Form.Item=host('ui-FormItem');ui.Form.List=()=>null;ui.Form.useForm=()=>[{resetFields(){},setFieldsValue(){},validateFields:async()=>({}),setFieldValue(){}}];ui.Form.useWatch=()=>undefined;
+ui.App=Object.assign(host('ui-App'),{useApp:()=>({message:{success(){},info(){}}})});ui.Drawer=props=>props.open?React.createElement('ui-Drawer',props,props.extra,props.children):null;ui.Modal=props=>props.open?React.createElement('ui-Modal',props,props.children):null;ui.Popconfirm=host('ui-Popconfirm');
+ui.Tabs=props=>React.createElement('ui-Tabs',props,props.items.map(item=>React.createElement('ui-tab',{key:item.key},item.children)));
+ui.Collapse=props=>React.createElement('ui-Collapse',props,props.items?.map(item=>React.createElement('ui-collapse-item',{key:item.key},item.children)));
+ui.Table=props=>React.createElement('ui-Table',props,(props.dataSource||[]).map((row,index)=>React.createElement('ui-row',{key:row.id||index},props.columns.map((col,i)=>React.createElement('ui-cell',{key:i},col.render?col.render(row[col.dataIndex],row,index):String(row[col.dataIndex]??''))))));
+module.exports={React,ui,host,icons:new Proxy({},{get:(_,key)=>host('icon-'+String(key))}),flush:async()=>{for(let i=0;i<20;i++)await Promise.resolve();},text:node=>{const text=n=>typeof n==='string'?n:Array.isArray(n)?n.map(text).join(' '):text(n?.children||[]);return text(node);}};
