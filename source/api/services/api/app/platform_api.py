@@ -272,7 +272,7 @@ def source_access(session,user,workspace_id,row,access):
   if value.get('archived') or not approved(value) or visibility(value,row.kind)!='public':return False
   if row.kind=='model_configuration':return True
   return any(_value(model).get('provider_id')==row.resource_id and source_access(session,subject,workspace_id,model,'read') for model in session.scalars(select(Resource).where(Resource.kind=='model_configuration',Resource.tenant_id==user.tenant_id,Resource.workspace_id==workspace_id)))
- page={'agent':{'page.ai','page.workbench'},'agent_version':{'page.ai','page.workbench'},'workflow':{'page.ai','page.workbench'},'database':{'page.database'},'data_table':{'page.database'},'data_table_version':{'page.database'}}.get(row.kind,{'page.knowledge','page.ai','page.workbench'})
+ page={'page.database'} if row.kind in {'database','data_table','data_table_version','data_batch','data_file'} else {'page.ai','page.workbench'} if row.kind in {'agent','agent_version','workflow'} else {'page.knowledge','page.ai','page.workbench'}
  if not page&permissions:return False
  from app.data_access import DATA_KINDS,_authorize_subject_resource
  if row.kind in DATA_KINDS and access!='view':
@@ -436,4 +436,5 @@ def runtime_resources(workspace_id:str,request:Request,kind:str,session=Depends(
  if kind not in DIRECTORY_KINDS:raise AppError('RESOURCE_KIND_DENIED','不支持此资源目录',403)
  from app.asset_archive import live_asset
  token_id=request.state.platform_token_id;current_scope(session,token_id,workspace_id);token,key,user=token_state(session,token_id);rows=session.scalars(select(Resource).where(Resource.tenant_id==user.tenant_id,Resource.workspace_id==workspace_id,Resource.kind==kind,live_asset(kind)))
- return {'items':[metadata(row) for row in rows if allowed(session,token_id,workspace_id,row)]}
+ from app.database.lifecycle import directory_live
+ return {'items':[metadata(row) for row in rows if allowed(session,token_id,workspace_id,row) and directory_live(session,row)]}

@@ -239,7 +239,7 @@ from app.session_policy import router as session_policy_router
 app.include_router(session_policy_router,prefix="/api/v1")
 
 from app.platform_api import manage as platform_management_router,runtime as platform_runtime_router
-from app import platform_publications, platform_resources, platform_space_roles, platform_files, platform_knowledge, platform_contract
+from app import platform_publications, platform_resources, platform_space_roles, platform_files, platform_knowledge, platform_database, platform_contract
 app.include_router(platform_management_router,prefix="/api/v1")
 app.include_router(platform_runtime_router,prefix="/api/platform/v1")
 from app.resource_policy import router as resource_policy_router

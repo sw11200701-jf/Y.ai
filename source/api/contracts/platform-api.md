@@ -1,6 +1,6 @@
 # 章谱平台 API v1
 
-工作流、Agent 和知识库共用平台密钥及空间授权。以下路径以 `/api/platform/v1` 为前缀。生产环境使用部署方提供的 HTTPS 地址。
+工作流、Agent、知识库和结构化数据库共用平台密钥及空间授权。以下路径以 `/api/platform/v1` 为前缀。生产环境使用部署方提供的 HTTPS 地址。
 
 ## 1. 凭据与权限
 
@@ -11,10 +11,12 @@
 | 目录、详情、切片和检索 | 空间及相关知识库、文档、版本和原件的读取授权。行列限制继续生效 |
 | 工作流、Agent 调用 | 来源资源可读取并允许执行。已发布的 Agent 版本和运行依赖也需授权 |
 | 修改、发布、删除或恢复 | 相关资源写入授权及完整维护范围 |
-| 创建知识库、上传、覆盖原件、解析或修订知识 | 空间可写并勾选「允许创建」，同时具备已有目标和相关来源的维护权限 |
+| 创建知识库、数据库、表、批次或版本 | 空间可写并勾选「允许创建」，同时具备已有目标和相关来源的维护权限 |
 | 下载原件及完整 XLSX | 原件下载或完整明细导出授权 |
 
 平台密钥的空间与资源范围、令牌签发范围、密钥主体和发放人的当前权限同时生效。对接时可以先用 `GET /spaces` 和 `GET /spaces/{workspace_id}/resources?kind=knowledge_base` 核对目录。对同一集成持续使用同一平台密钥，可以用新换取的短令牌继续查询其运行。
+
+通用资源目录支持按类型查询，常用值为 `workflow`、`agent`、`knowledge_base`、`database` 和 `data_table`。使用 `GET /spaces/{workspace_id}/resources/{kind}/{identifier}` 获取受支持的资源详情。附件通过 `POST /spaces/{workspace_id}/attachments` 上传，表单字段为 `file`。密钥轮换、空间成员和角色配置、工作流及 Agent 的 API 发布，由管理入口使用登录会话和相应权限操作。
 
 下列示例使用 Bash、cURL 和 jq。先在调用方后端设置 `BASE_URL` 与 `PLATFORM_API_KEY`。
 
@@ -159,7 +161,58 @@ jq -n --arg version "$VERSION_ID" --arg text '更新后的知识正文' \
     -H 'Content-Type: application/json' --data-binary @- "$ITEM"
 ```
 
-## 4. 错误与机器可读文档
+## 4. 数据库与数据表
+
+本节路径相对 `/spaces/{workspace_id}`。数据库是章谱内用于管理结构化数据的业务资源。查询提交受控条件，接口使用空间权限、行列授权和已发布数据版本。
+
+| 方法与路径 | 请求及结果 |
+| --- | --- |
+| `GET /databases` | 分页列出可读数据库，支持 `offset`、`limit` |
+| `POST /databases` | JSON `name`、可选 `description`，返回库 ID 和 `ETag` |
+| `GET /databases/{database_id}` | 读取库详情和 `ETag` |
+| `PATCH /databases/{database_id}` | JSON `name` 或 `description`，发送 `If-Match` |
+| `GET /databases/{database_id}/tables` | 列出该库内已授权的数据表 |
+| `POST /databases/{database_id}/tables` | 声明 `name`、`schema_fields`，可选 `description`、`mapping`、`quality_rules`。创建空表并返回 `ETag` |
+| `GET /database/tables/{table_id}` | 读取表详情、当前发布版本 ID、草稿批次 ID 和 `ETag` |
+| `PATCH /database/tables/{table_id}` | JSON `name` 或 `description`，发送 `If-Match` |
+| `DELETE /databases/{database_id}` 或 `DELETE /database/tables/{table_id}` | 发送 `If-Match`，移入回收站，返回删除后的 `ETag` |
+| `GET /database/recycle-bin` | 分页列出可维护的已删除库。传 `database_id` 查看该有效库中的已删除表。每项含 `etag` |
+| `POST /databases/{database_id}/restore` 或 `POST /database/tables/{table_id}/restore` | 用回收站中的 `etag` 作为 `If-Match`，恢复原库或表 |
+
+首次删除须匹配当前 `ETag`，针对仍在回收站的同一资源重试会返回已有删除记录。删除后，相关表、历史版本、批次与原件暂停访问。恢复保留原 ID、原件、草稿和已发布版本。库内独立删除过的表保持删除状态，可在库恢复后单独恢复。删库和恢复库须具备库内所有有效表的完整维护权限。旧版知识表通过其原知识库维护；绑定了此类表的库受回收站保护。
+
+### 导入、查询和导出
+
+| 方法与路径 | 请求及结果 |
+| --- | --- |
+| `POST /databases/{database_id}/imports` | 上传 CSV 或 XLSX，自动推断字段、新建表并生成待发布批次。表单字段为 `file`，可选 `name`、`sheet_name` |
+| `POST /database/tables/{table_id}/imports` | 向同一表导入新文件，保留表 ID。表单字段为 `file`，可选 `sheet_name` |
+| `GET /database/tables/{table_id}/batches` | 完整维护人员查看导入及修订批次 |
+| `GET /database/batches/{batch_id}` | 完整维护人员查看质量报告和有限预览 |
+| `POST /database/batches/{batch_id}/revisions` | JSON `corrections` 按原文件行号和列名修订单元格，可提交 `schema_fields`、`mapping`、`quality_rules`、`cleaning` |
+| `POST /database/batches/{batch_id}/publish` | 发布通过校验的批次并将它设为当前版本，返回版本 ID |
+| `GET /database/tables/{table_id}/versions` | 列出已发布且已授权的版本 |
+| `GET /database/tables/{table_id}/dictionary` | 读取当前或指定 `version_id` 的授权字段字典 |
+| `POST /database/tables/{table_id}/query` | JSON 可选 `version_id` 和 `query`，支持筛选、分页和聚合，遵守行列权限 |
+| `GET /database/files/{file_id}/download` | 下载具备完整权限的导入原件，`file_id` 来自导入批次 |
+| `POST /database/tables/{table_id}/export` | 导出当前或指定 `version_id` 的授权明细 CSV，响应头含 `X-Data-Version` |
+
+导入文件上限为 5 MiB。导入或修订生成草稿，发布后才更新默认查询和导出。单元格修订示例为 `{"corrections":[{"row":2,"column":"amount","value":120}]}`，第 1 行为表头。整行新增或删除可提交包含目标行集的新文件，向同一表导入并发布。原件及历史发布版本仍可在授权范围内读取。
+
+```bash
+DB_ID=$(curl --fail-with-body -sS -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' --data '{"name":"财务台账"}' "$SPACE/databases" | jq -er '.id')
+IMPORTED=$(curl --fail-with-body -sS -H "Authorization: Bearer $TOKEN" \
+  -F 'file=@ledger.csv' "$SPACE/databases/$DB_ID/imports")
+TABLE_ID=$(jq -er '.table.id' <<<"$IMPORTED")
+BATCH_ID=$(jq -er '.batch.id' <<<"$IMPORTED")
+curl --fail-with-body -sS -X POST -H "Authorization: Bearer $TOKEN" \
+  "$SPACE/database/batches/$BATCH_ID/publish"
+curl --fail-with-body -sS -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  --data '{"query":{"limit":20}}' "$SPACE/database/tables/$TABLE_ID/query"
+```
+
+## 5. 错误与机器可读文档
 
 接口错误包含 `error.code`、`error.message` 和 `request_id`。排障时保留 `request_id`，超级管理员可在「系统日志」按编号查找已记录的请求。
 

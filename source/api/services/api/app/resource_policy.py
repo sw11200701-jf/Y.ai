@@ -95,12 +95,13 @@ def require_execute(session, context, kind=None, resource_id=None):
 
 def directory(session, context, kind):
     from app.auth import validate_context
+    from app.database.lifecycle import directory_live
     from app.platform_api import metadata
     from app.asset_archive import live_asset
     subject=validate_context(context,session);result=[]
     for row in session.scalars(select(Resource).where(Resource.kind==kind,Resource.tenant_id==context.tenant_id,Resource.workspace_id==context.workspace_id,live_asset(kind))):
         level=access_level(session,subject,row)
-        if level<1:continue
+        if level<1 or not directory_live(session,row):continue
         result.append({**metadata(row),'metadata_only':True,'access':{'view':True,'read':level>=2,'edit':level>=3,
             'execute':'resources.execute' in context.permissions and role_access(session,subject,row)[1]}})
     return result

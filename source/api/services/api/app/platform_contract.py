@@ -37,7 +37,7 @@ def contract(app):
     return {
         'openapi': source['openapi'],
         'info': {'title': '章谱平台 API', 'version': '1.0',
-                 'description': '工作流与 Agent 固定版本调用，以及授权知识库的维护和检索。'},
+                 'description': '工作流与 Agent 固定版本调用，授权知识库维护和检索，以及结构化数据库和数据表管理。'},
         'servers': [{'url': '/'}], 'paths': paths,
         'components': {'securitySchemes': {'PlatformBearer': {'type': 'http', 'scheme': 'bearer',
             'description': '通过 POST /api/platform/v1/token 交换的短令牌'}}, 'schemas': schemas},
