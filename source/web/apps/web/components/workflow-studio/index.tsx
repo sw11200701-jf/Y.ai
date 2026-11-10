@@ -385,7 +385,8 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
       let storedNode=false;try{storedNode=!!change&&!!scopeWorkflow(stored,change.scope_path).nodes.find(item=>item.id===change.node_id);}catch{}
       const patchOnly=!!next.id&&!!change&&storedNode;
       const whole=nodeStructureRequest(next,stored,change);
-      const saved=next.id&&change?await workflowApi.saveNodeSettings(next.id,{...nodeSettingsRequest(stored,change),...(!storedNode?{structure:whole}:{})}):change?await workflowApi.createNodeDraft(whole,change.node_id,change.scope_path):await workflowApi.save(whole);if(!current())throw Error('工作室或身份已变化，请重新读取保存状态');
+      const result=next.id&&change?await workflowApi.saveNodeSettings(next.id,{...nodeSettingsRequest(stored,change),...(!storedNode?{structure:whole}:{})}):change?await workflowApi.createNodeDraft(whole,change.node_id,change.scope_path):await workflowApi.save(whole);if(!current())throw Error('工作室或身份已变化，请重新读取保存状态');
+      const saved={...result,publication:next.publication,access:next.access};
       if(!saved.id)throw Error('保存未返回工作流标识，请重新读取确认');
       setWorkflow(previous=>previous&&patchOnly&&change?mergeSavedNode(previous,saved,change):withWorkflowLayout(saved,previous||next));
       if(embedded&&agentId&&linkedId!==saved.id){await workflowApi.bind(agentId,saved.id);if(!current())throw Error('工作室已变化，请重新打开');setLinkedId(saved.id);}

@@ -38,6 +38,14 @@ async function harness(options = {}) {
   const api = {
     variableCatalog: async () => ({items:['system.run_id','system.tenant_id','system.workspace_id','user.id','user.role'].map(ref=>({ref,label:ref,schema:{type:'string'},readonly:true,source:'server'}))}), list: async () => ({ items: options.items || [] }), registry: async () => registry, validate: async w => { calls.push(['validate', w]); return { valid: true }; },
     save: async w => { calls.push(['save', w]); if (options.saveError) throw options.saveError; const complete = value => { const result = value || { ...clone(w), id: w.id || 'saved-workflow' }; saved.set(result.id, result); return result; }; if (options.deferSave) return new Promise((resolve, reject) => saveRequests.push({ resolve: value => resolve(complete(value)), reject })); return complete(); },
+    saveNodeSettings: async (id, payload) => {
+      const {publication,access,...graph}=clone(payload.structure);
+      return {...graph,id,graph_sha256:'b'.repeat(64)};
+    },
+    publish: async (id,audience,graphHash) => {
+      calls.push(['publish-workflow',id,clone(audience),graphHash]);
+      return {status:'published',visibility:audience.visibility,revision:audience.expected_revision+1,version:2};
+    },
     run: async (w, inputs, query, prompt) => { calls.push(['run', clone(w), inputs, query, prompt]); return { id: `run-${++seq}`, status: 'succeeded' }; },
     debugRun: async draft => { calls.push(['debugRun', clone(draft)]); const created=await api.run(draft.workflow, draft.inputs, draft.query, draft.prompt); return options.debugRunResult || (draft.node_test ? {...created,execution_identity:{kind:'node_test',node_id:draft.node_test.node_id,scope_path:draft.node_test.scope_path||[],target_key:'root/'+draft.node_test.node_id,source_graph_sha256:'a'.repeat(64),graph_sha256:'b'.repeat(64)}} : created); },
     trace: async (id, after) => { calls.push(['trace', id, after]); if(options.deferTrace)return new Promise((resolve,reject)=>tracePending.push({id,resolve,reject})); if(options.traceError)throw options.traceError; if(options.tracePages?.length)return options.tracePages.shift(); return {run_id:id,items:options.traces||[],last_sequence:0,has_more:false}; },
@@ -78,6 +86,11 @@ async function harness(options = {}) {
     './run-results': compile(path.join(web,'components/workflow-studio/run-results.tsx'),{'@/lib/workflow/run-events':runEvents,'@/lib/workflow/adapter':adapter,'./presentation-result':presentationResult,'./retrieval-result':compile(path.join(web,'components/workflow-studio/retrieval-result.tsx'),{'./typed-value':compile(path.join(web,'components/workflow-studio/typed-value.tsx'),{'@/lib/workflow/labels':labels,'./studio.module.css':{__esModule:true,default:css}}),'./studio.module.css':{__esModule:true,default:css}}),'./typed-value':compile(path.join(web,'components/workflow-studio/typed-value.tsx'),{'@/lib/workflow/labels':labels,'./studio.module.css':{__esModule:true,default:css}}),'./studio.module.css':{__esModule:true,default:css}}),
     './schema-definition': compile(path.join(web,'components/workflow-studio/schema-definition.tsx'),{'./schema-fields':schemaFields,'@/lib/workflow/labels':labels,'./studio.module.css':{__esModule:true,default:css}}),
     './node-test-dialog': {NodeTestDialog:p=>React.createElement('node-test-dialog',p)},
+    ...(options.mockNodePanel?{'./node-draft-panel':{NodeDraftPanel:p=>React.createElement('node-settings-panel',p)}}:{}),
+    '../asset-publication': {
+      PublicationBadges: () => null,
+      PublicationDialog: p => React.createElement('publication-dialog',p),
+    },
     './subflow-editor': {SubflowEditor:p=>React.createElement('subflow-editor',p)},
     './loop-condition': {LoopCondition:p=>React.createElement('loop-condition',p)},
     './condition-editor': {ConditionEditor:p=>React.createElement('condition-editor',p)},
@@ -104,7 +117,7 @@ async function harness(options = {}) {
     './studio.module.css': { __esModule: true, default: css },
   }, globals).default;
   let tree;
-  const initialProps = options.embedded ? { embedded: true, agentId: 'agent-a', workflowId: options.unbound ? undefined : 'linked-flow', identityKey: 'actor-a', onPublish: async () => { calls.push(['publish']); return { id: 'published-version', version: 1 }; } } : {};
+  const initialProps = options.embedded ? { embedded: true, agentId: 'agent-a', workflowId: options.unbound ? undefined : 'linked-flow', identityKey: 'actor-a', onPublish: async audience => { calls.push(['publish',clone(audience)]); return { id: 'published-version', version: 1 }; } } : {};
   Object.assign(initialProps, { fullPage: true, ...options.props, onBack: () => calls.push(['back']), onLeaveGuardChange: guard => { leaveGuard = guard; } });
   const createNodeMock = element => element.type === 'div' ? { get clientWidth() { return viewport.width; }, get clientHeight() { return viewport.height; }, getBoundingClientRect: () => ({ left: 0, top: 0 }), addEventListener(name,fn,capture) { if(name==='pointerdown')assert.equal(capture,true);listeners.set('canvas:'+name,fn); }, removeEventListener(name,fn) {if(listeners.get('canvas:'+name)===fn)listeners.delete('canvas:'+name);} } : null;
   function Parent() { const [id, setId] = React.useState(initialProps.workflowId); return React.createElement(Studio, { ...initialProps, workflowId: id, onWorkflowChange: setId }); }
@@ -224,10 +237,39 @@ test('embedded draft tests use current graph and Agent scope without saving or r
     assert(!h.content().includes('独立工作流发布'));
   } finally { await h.dispose(); }
 });
-test('embedded publication awaits real canvas save before parent Agent publication', async () => {
+test('embedded publication waits for audience confirmation, then saves a changed canvas before the Agent release', async () => {
   const h = await harness({ embedded: true });
-  try { await h.click('发布工作流'); const mutations = h.calls.map(c => c[0]); assert(mutations.includes('publish')); assert(mutations.indexOf('save') < mutations.indexOf('publish')); }
+  try {
+    const input=h.tree.root.findByProps({'aria-label':'工作流名称'});
+    await act(async()=>{input.props.onChange({target:{value:'Updated canvas'}});await flush();});
+    await h.click('发布智能体及流程');
+    assert(!h.calls.some(c=>['save','publish'].includes(c[0])));
+    const audience={visibility:'partial',user_ids:['member-a'],role_ids:[],expected_revision:0};
+    await act(async()=>{await h.tree.root.findByType('publication-dialog').props.onPublish(audience);});
+    const mutations=h.calls.map(c=>c[0]);
+    assert(mutations.includes('save')&&mutations.indexOf('save')<mutations.indexOf('publish'));
+    assert.deepEqual(h.calls.find(c=>c[0]==='publish')[1],audience);
+  }
   finally { await h.dispose(); }
+});
+test('adding a node to a published independent workflow keeps the audience revision', async () => {
+  const publication={status:'published',visibility:'public',revision:4,version:1};
+  const workflow={...adapter.newWorkflow(),id:'existing-flow',graph_sha256:'a'.repeat(64),publication};
+  const h=await harness({workflow,props:{workflowId:workflow.id},mockNodePanel:true});
+  try {
+    const surface=h.tree.root.findByType('flow-surface');
+    await act(async()=>{surface.props.onNodeClick({},surface.props.nodes[0]);await flush();});
+    const extra={...clone(workflow.nodes[0]),id:'new-node'};
+    await act(async()=>{await h.tree.root.findByType('node-settings-panel').props.onCommit(
+      {...workflow,nodes:[...workflow.nodes,extra]},
+      {expected_graph_sha256:workflow.graph_sha256,node_id:extra.id,scope_path:[],node:extra});});
+    await h.click('发布工作流');
+    const dialog=h.tree.root.findByType('publication-dialog');
+    assert.equal(dialog.props.value.revision,4);
+    await act(async()=>{await dialog.props.onPublish({visibility:'private',user_ids:[],role_ids:[],expected_revision:4});});
+    const [,id,audience,graphHash]=h.calls.find(c=>c[0]==='publish-workflow');
+    assert.equal(id,workflow.id);assert.equal(audience.expected_revision,4);assert.equal(graphHash,'b'.repeat(64));
+  }finally{await h.dispose();}
 });
 test('output presentation renders text, exact decimal table cells and protected file actions', async () => {
   const h = await harness();
@@ -238,14 +280,14 @@ test('output presentation renders text, exact decimal table cells and protected 
 test('unbound Agent draft tests leave its binding and publish capability unchanged', async () => {
   const h = await harness({ embedded: true, unbound: true });
   try {
-    assert.equal(h.buttons('发布工作流')[0].props.disabled, true, 'not publishable before confirmed binding');
+    assert.equal(h.buttons('发布智能体及流程')[0].props.disabled, true, 'not publishable before confirmed binding');
     await h.click('测试输入');
     await act(async () => { h.tree.root.findByType('message-composer').props.onChange({ type: 'text', text: 'new private graph', attachments: [] }); await flush(); });
     await h.click('保存并测试');
     assert.equal(h.calls.filter(c => c[0] === 'save').length, 0); assert.equal(h.calls.filter(c => c[0] === 'bind').length, 0); assert.equal(h.calls.filter(c => c[0] === 'debugRun').length, 1);
     assert.equal(h.pending[0]?.id, 'run-1', 'run polling survives the parent workflowId update');
     await h.complete('run-1', { id: 'run-1', status: 'succeeded', outputs: { text: 'first-linked-run' } });
-    assert(h.content().includes('first-linked-run')); assert.equal(h.buttons('发布工作流')[0].props.disabled, true);
+    assert(h.content().includes('first-linked-run')); assert.equal(h.buttons('发布智能体及流程')[0].props.disabled, true);
   } finally { await h.dispose(); }
 });
 test('panel resize preserves viewport and leaves graph clean; explicit fit remains available', async () => {
@@ -464,7 +506,7 @@ test('UI recheck: failed linked-workflow read offers retry rather than replacing
 test('UI recheck: inspector starts collapsed and selection or explicit settings open it without changing DSL', async () => {
   const h = await harness({ embedded: true });
   try {
-    assert.equal(h.buttons('展开属性区')[0].props['aria-expanded'], false); assert.equal(h.buttons('发布工作流').length, 1); assert.equal(h.buttons('发布智能体').length, 0);
+    assert.equal(h.buttons('展开属性区')[0].props['aria-expanded'], false); assert.equal(h.buttons('发布智能体及流程').length, 1);
     const flow = () => h.tree.root.findByType('flow-surface'); const before = clone(flow().props.nodes.map(node => node.data.node));
     await act(async () => { flow().props.onNodeClick({}, flow().props.nodes[1]); await flush(); }); assert.equal(h.buttons('收起属性区')[0].props['aria-expanded'], true);
     await act(async () => { flow().props.onPaneClick(); await flush(); }); assert.equal(h.buttons('展开属性区')[0].props['aria-expanded'], false);

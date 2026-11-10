@@ -176,7 +176,7 @@ def _conversation_model(version):
 
 def list_conversations(*, context, session):
     require_ai_access(context, session)
-    from app.resource_policy import directory
+    from app.resource_policy import directory, require_execute
     allowed = {item["id"] for item in directory(session, context, "agent") if item["access"]["execute"]}
     latest = {}
     for version in list_resources(session, "agent_version", context):
@@ -188,6 +188,12 @@ def list_conversations(*, context, session):
     for agent in list_resources(session, "agent", context):
         version = latest.get(agent["id"])
         if version and version.get("workflow_snapshot"):
+            try:
+                require_execute(session,context,"workflow",version["config"]["main_workflow_id"])
+            except AppError as error:
+                if error.status_code not in (403,404):
+                    raise
+                continue
             snapshot = version["workflow_snapshot"]
             items.append({"id": agent["id"], "name": version["name"], "kind": "agent", "workflow_agent": True,
                 "conversation_ready": True, "conversation_version_id": version["id"], "input_schema": snapshot.get("input_schema"),

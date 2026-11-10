@@ -31,6 +31,7 @@ def _schema(value,label):
 
 
 def prepare_release(session,context,source,runtime_policy,permission='applications.publish'):
+    from app.asset_publication import state as workspace_publication
     from app.auth import validate_context
     from app.rbac import require_permission
     from app.agents.service import get_agent_config
@@ -46,6 +47,8 @@ def prepare_release(session,context,source,runtime_policy,permission='applicatio
         if (kind,identifier) in refs:return
         value=get_resource(session,kind,identifier,context)
         row=_row(session,context,kind,identifier)
+        if permission == 'applications.publish' and workspace_publication(session,row):
+            raise AppError('APP_WORKSPACE_ASSET_REQUIRES_PLATFORM','此资源设置了空间公开范围，请通过平台 API 接入',409)
         # Canonical physical names avoid treating an alias as an independent grant.
         refs[(row.kind,row.resource_id)]={'kind':row.kind,'resource_id':row.resource_id,'actions':['use']}
         if row.kind in {'model_configuration','model_provider','plugin_version','connection'}:

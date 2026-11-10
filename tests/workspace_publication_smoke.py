@@ -102,6 +102,8 @@ def check():
         assert run(alice, {"agent_id": agent_id, "agent_version_id": published["id"]})["text"] == "Advanced result"
         assert post(alice, "/runs", {"workflow_id": linked["id"], "prompt": "Denied"}).status_code == 403
         assert body(alice.get(f"/api/v1/agents/{agent_id}/versions"), 200)["items"][0]["id"] == published["id"]
+        assert publish_flow(linked, "private", 1).status_code == 201
+        assert agent_id not in choices(alice)
         body(post(owner, f"/agents/{agent_id}/publish", {"visibility": "private", "expected_revision": 1}), 201)
         assert agent_id not in choices(alice)
         assert alice.get(f"/api/v1/agents/{agent_id}/versions").status_code == 404

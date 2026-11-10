@@ -168,8 +168,8 @@ def space_directory(identifier:str,request:Request,kind:str,session=Depends(get_
  context=_human(request,session,'platform.directory');user=session.get(User,context.operator_id)
  subject,permissions=scoped_permissions(session,user,identifier)
  if kind not in KINDS:raise AppError('RESOURCE_KIND_DENIED','此资源类型不提供目录',422)
- rows=session.scalars(select(Resource).where(Resource.kind==kind,Resource.tenant_id==context.tenant_id,Resource.workspace_id==identifier))
- return {'items':[metadata(row) for row in rows if source_access(session,subject,identifier,row,'view')]}
+ return {'items':[_directory_metadata(session,subject,row) for row in _directory_rows(session,kind,context.tenant_id,identifier)
+                  if source_access(session,subject,identifier,row,'view')]}
 
 @manage.get('/platform/spaces/{identifier}/members')
 def space_members(identifier:str,request:Request,session=Depends(get_session)):
@@ -214,12 +214,13 @@ def rotate_key(identifier:str,request:Request,session=Depends(get_session)):
  if not value['active']:raise AppError('PLATFORM_KEY_REVOKED','已撤销的凭据不能轮换',409)
  raw='yak_'+identifier.removeprefix('pkey_')+'_'+secrets.token_urlsafe(32);value.update(secret_hash=digest(raw),credential_revision=value['credential_revision']+1,revision=value['revision']+1,rotated_at=utc_now());row.payload=json.dumps(value);return {'key':_public_key(row),'api_key':raw}
 
-def _exchange(session,body):
+def _exchange(session,body,request):
  write_lock(session)
  raw=body.api_key.get_secret_value();match=re.fullmatch(r'yak_([0-9a-f]{32})_[A-Za-z0-9_-]{43}',raw);row=_row(session,'platform_api_key','pkey_'+match[1]) if match else None;key=_value(row) if row else {}
  if not row or not key.get('active') or not hmac.compare_digest(digest(raw),key.get('secret_hash','0'*64)):raise AppError('PLATFORM_KEY_INVALID','平台凭据无效或已撤销',401)
  owner=session.get(User,key['owner_id'],populate_existing=True)
  if not owner or not owner.active or owner.must_change_password:raise AppError('PLATFORM_SUBJECT_REVOKED','凭据所属账号已不可用',401)
+ request.state.log_actor=(row.tenant_id,row.workspace_id,row.resource_id)
  selected=body.workspace_ids;grants=[g for g in key['spaces'] if selected is None or g['workspace_id'] in selected]
  if selected and set(selected)!={g['workspace_id'] for g in grants}:raise AppError('WORKSPACE_DENIED','请求包含未授权空间',403)
  for grant in grants:space_subject(session,owner,grant['workspace_id'])
@@ -293,19 +294,33 @@ def source_access(session,user,workspace_id,row,access):
   return True
  return False
 
-def allowed(session,state,workspace_id,row,access='view'):
- token,key,subject,permissions,old,current=current_scope(session,state,workspace_id)
+def allowed(session,scope,workspace_id,row,access='view'):
+ token,key,subject,permissions,old,current=scope
  return row.kind in KINDS and (row.tenant_id,row.workspace_id)==(subject.tenant_id,workspace_id) and min(_rule(old,row.kind,row.resource_id)[0],_rule(current,row.kind,row.resource_id)[0])>=LEVELS[access] and delegated_access(session,key,subject,workspace_id,row,access)
 
 def delegated_access(session,key,subject,workspace_id,row,access):
  grantor=session.get(User,key['created_by'],populate_existing=True)
  return grantor is not None and source_access(session,subject,workspace_id,row,access) and source_access(session,grantor,workspace_id,row,access)
 
-def metadata(row):
- value=_value(row)
+def metadata(row,value=None):
+ if value is None:value=_value(row)
  def text(key,default=''):
   v=value.get(key,default);return v[:160] if isinstance(v,str) else default
  return {'id':row.resource_id,'kind':row.kind,'name':text('name',text('title',text('filename',row.resource_id))),'status':text('status'),'created_at':row.created_at,'updated_at':row.updated_at}
+
+def _directory_rows(session,kind,tenant,workspace):
+ from app.asset_archive import live_asset
+ from app.database.lifecycle import directory_live
+ rows=session.scalars(select(Resource).where(Resource.tenant_id==tenant,Resource.workspace_id==workspace,Resource.kind==kind,live_asset(kind)))
+ return (row for row in rows if directory_live(session,row))
+
+def _directory_metadata(session,subject,row):
+ from app.asset_publication import KINDS as published_kinds, summary, view_payload
+ if row.kind not in published_kinds:return metadata(row)
+ context=SimpleNamespace(principal_type='human',actor_id=subject.id)
+ value=view_payload(session,context,row,_value(row))
+ publication=summary(session,context,row,value)
+ return {**metadata(row,value),'status':publication['status'],'publication':publication}
 
 def platform_context(session,token_id,workspace_id):
  from app.contracts import BusinessContext
@@ -414,12 +429,15 @@ def bind_request(request,session):
  if not match:raise AppError('PLATFORM_TOKEN_REQUIRED','需要平台访问令牌',401)
  identifier='ptoken_'+match[2];row=_row(session,'platform_api_token',identifier)
  if row is None or not hmac.compare_digest(digest(match[1]),_value(row)['secret_hash']):raise AppError('PLATFORM_TOKEN_INVALID','访问令牌无效',401)
- token_state(session,identifier);request.state.platform_token_id=identifier
+ token,key,user=token_state(session,identifier);request.state.platform_token_id=identifier
+ request.state.log_actor=(row.tenant_id,row.workspace_id,key['id'])
  parts=request.url.path.strip('/').split('/')
- if len(parts)>4 and parts[3]=='spaces':current_scope(session,identifier,parts[4])
+ if len(parts)>4 and parts[3]=='spaces':
+  current_scope(session,identifier,parts[4])
+  request.state.log_actor=(row.tenant_id,parts[4],key['id'])
 
 @runtime.post('/token',response_model=TokenReceipt,summary='交换平台短令牌')
-def exchange(body:Exchange,session=Depends(get_session)):return _exchange(session,body)
+def exchange(body:Exchange,request:Request,session=Depends(get_session)):return _exchange(session,body,request)
 @runtime.post('/token/revoke')
 def revoke_token(request:Request,session=Depends(get_session)):
  row=_row(session,'platform_api_token',request.state.platform_token_id);value=_value(row);value['revoked']=True;row.payload=json.dumps(value)
@@ -437,7 +455,7 @@ def runtime_spaces(request:Request,session=Depends(get_session)):
 @runtime.get('/spaces/{workspace_id}/resources')
 def runtime_resources(workspace_id:str,request:Request,kind:str,session=Depends(get_session)):
  if kind not in DIRECTORY_KINDS:raise AppError('RESOURCE_KIND_DENIED','不支持此资源目录',403)
- from app.asset_archive import live_asset
- token_id=request.state.platform_token_id;current_scope(session,token_id,workspace_id);token,key,user=token_state(session,token_id);rows=session.scalars(select(Resource).where(Resource.tenant_id==user.tenant_id,Resource.workspace_id==workspace_id,Resource.kind==kind,live_asset(kind)))
- from app.database.lifecycle import directory_live
- return {'items':[metadata(row) for row in rows if allowed(session,token_id,workspace_id,row) and directory_live(session,row)]}
+ scope=current_scope(session,request.state.platform_token_id,workspace_id)
+ subject=scope[2]
+ return {'items':[_directory_metadata(session,subject,row) for row in _directory_rows(session,kind,subject.tenant_id,workspace_id)
+                  if allowed(session,scope,workspace_id,row)]}
