@@ -26,6 +26,8 @@ async def lifespan(app):
     from app.secrets import validate_master_key_configuration
     validate_master_key_configuration()
     init_db()
+    from app.workspace_logs import init_logs
+    init_logs()
     from app.knowledge.slicing_doc_conversion import configure as configure_doc_converter
     server_office = os.name != 'nt' and bool(os.environ.get('FINANCE_OFFICE_SOCKET'))
     try:
@@ -81,8 +83,15 @@ app.add_middleware(RequestTransactionMiddleware)
 
 @app.middleware("http")
 async def request_id(request: Request, call_next):
+    from app.workspace_logs import record_request
     request.state.request_id = uuid.uuid4().hex
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        request.state.model_test_error_code = "INTERNAL_ERROR"
+        await record_request(request, 500)
+        raise
+    await record_request(request, response.status_code)
     from app.model_catalog.diagnostics import record_model_test_result
     record_model_test_result(request.method, request.url.path, response.status_code,
                              getattr(request.state, 'model_test_error_code', None), request.state.request_id)
@@ -104,6 +113,7 @@ async def app_error(request: Request, exc: AppError):
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, exc: RequestValidationError):
+    request.state.model_test_error_code = "VALIDATION_ERROR"
     # Do not echo raw request input: it may contain credentials.
     details = [validation_detail(e) for e in exc.errors()]
     return JSONResponse(status_code=422, content={"error": {"code": "VALIDATION_ERROR", "message": chinese_message("VALIDATION_ERROR"), "details": details}, "request_id": request.state.request_id})
@@ -123,6 +133,8 @@ loaded_modules = []
 app.include_router(auth_router,prefix="/api/v1")
 from app.asset_archive import router as asset_archive_router
 app.include_router(asset_archive_router,prefix="/api/v1")
+from app.workspace_logs import router as workspace_logs_router
+app.include_router(workspace_logs_router,prefix="/api/v1")
 from app.tool_egress import router as tool_egress_router
 app.include_router(tool_egress_router,prefix="/api/v1")
 from app.user_variables import router as user_variable_router

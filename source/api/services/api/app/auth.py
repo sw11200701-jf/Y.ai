@@ -368,6 +368,8 @@ async def setup(body:Setup,request:Request,response:Response,session=Depends(get
         from app.db import OwnershipAudit
         session.add(OwnershipAudit(id=new_id("audit"),actor_id=user.id,action="installation_claim_legacy",resource_kind="*",resource_id="*",details=json.dumps({"count":len(legacy),"scope":"private","workspace_id":user.workspace_id}),created_at=utc_now()))
         auth_session,token=new_session(session,response,user)
+        from app.workspace_logs import actor_scope
+        request.state.log_actor=actor_scope(user)
         try:
             from app.knowledge.service import adopt_legacy_documents
         except ModuleNotFoundError as exc:
@@ -385,6 +387,9 @@ async def login(body:Credentials,request:Request,response:Response,session=Depen
     try:
         with _account_lock:throttle(session,request,name)
         user=session.scalar(select(User).where(User.username==name))
+        if user is not None:
+            from app.workspace_logs import actor_scope
+            request.state.log_actor=actor_scope(user)
         encoded = user.password_hash if user else None
         # Once dispatched, the worker owns the slot until the actual KDF ends.
         verification = asyncio.get_running_loop().run_in_executor(

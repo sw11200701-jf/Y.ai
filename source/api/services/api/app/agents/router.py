@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.context import get_context
 from app.contracts import BusinessContext, RunCreate
 from app.db import get_resource, get_session, list_resources
-from .service import AgentWrite, agent_references, execute_agent, list_agents, publish_agent, save_agent
+from .service import AgentWrite, agent_references, execute_agent, list_agents, list_conversations, publish_agent, save_agent
 from .specs import AgentDebug
 from .model_adapter import model_status
 from app.plugins.spec_base import StrictModel
@@ -25,6 +25,11 @@ def agents(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
            status: str = Query("", pattern="^(|draft|published)$"),
            session: Session = Depends(get_session, scope="function"), context: BusinessContext = Depends(get_context)):
     return list_agents(context=context, session=session, page=page, page_size=page_size, q=q, status=status)
+
+
+@router.get("/agents/conversations")
+def conversations(session: Session = Depends(get_session, scope="function"), context: BusinessContext = Depends(get_context)):
+    return list_conversations(context=context, session=session)
 
 
 @router.get("/agents/model-status")

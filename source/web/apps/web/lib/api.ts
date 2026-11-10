@@ -61,11 +61,21 @@ export async function request<T = Json>(path: string, init?: RequestInit): Promi
   if (response.status === 401 && !path.startsWith('/auth/')) { clearIdentityState(); window.dispatchEvent(new Event('zhangpu:session-expired')); }
   if(response.status===403&&body?.error?.code==='PASSWORD_CHANGE_REQUIRED')window.dispatchEvent(new Event('zhangpu:permissions-changed'));
   if(!response.ok)accessDenied(path,response.status,body?.error?.code,body?.request_id);
-  if (!response.ok) { const details=body?.error?.details||body?.detail;const failure={message:body?.error?.message,code:body?.error?.code,details,request_id:body?.request_id};throw Object.assign(new Error(formatError(failure).message),{status:response.status,code:failure.code,details,request_id:failure.request_id}); }
+  if (!response.ok) { const details=body?.error?.details||body?.detail;const failure={status:response.status,message:body?.error?.message,code:body?.error?.code,details,request_id:body?.request_id||response.headers.get('X-Request-ID')};throw Object.assign(new Error(formatError(failure).message),{status:failure.status,code:failure.code,details,request_id:failure.request_id}); }
   return body as T;
   } finally { pending.delete(controller); }
 }
 export const send = <T = Json>(path: string, body?: unknown, method = 'POST') => request<T>(path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+export async function reportClientError(code:'CONVERSATION_LIST_TIMEOUT'|'CONVERSATION_LIST_NETWORK'|'PAGE_RENDER_FAILED') {
+  try {
+    const result=await request<{request_id?:string}>('/workspace-logs/client-error',{
+      method:'POST',body:JSON.stringify({code}),signal:AbortSignal.timeout(5000),
+    });
+    return result.request_id;
+  } catch {
+    return undefined;
+  }
+}
 export async function list(path: string, init?:RequestInit): Promise<Json[]> {
   const first = await request<{ items: Json[]; total?: number; page?: number; page_size?: number }>(path,init);
   const items = first.items.slice();

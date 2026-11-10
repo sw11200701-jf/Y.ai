@@ -124,6 +124,7 @@ def route_permissions(path,method):
     if path=="/api/v1/workflow-resource-catalog/import-batches" and method=="GET":
         return [("page.ai","page.workbench","page.knowledge")]
     if path in ("/api/v1/capabilities","/api/v1/workflows/node-registry"):return []
+    if (path,method) in {("/api/v1/workspace-logs","GET"),("/api/v1/workspace-logs/client-error","POST")}:return []
     if path.startswith(("/docs","/redoc","/openapi.json")):return [tuple("page."+v for v in ("workbench","ai","knowledge","plugins","runs","accounts","roles"))]
     if not path.startswith("/api/v1/"):return [("__unclassified__",)]
     parts=path[len('/api/v1/'):].strip('/').split('/');head=parts[0]

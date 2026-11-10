@@ -10,7 +10,7 @@ import ModelVisionProfile from './model-vision-profile';
 import {menuLabels} from '@/lib/ui-labels';
 import {trialPassed,trialReceipt,type TrialReceipt} from '@/lib/model-trial';
 import {useSession} from './auth-gate';
-import {PageTitle} from './shared';
+import {PageTitle,SupportReference} from './shared';
 import {useLeaveConfirmation} from './workflow-studio/use-leave-confirmation';
 import styles from './model-management.module.css';
 
@@ -161,7 +161,7 @@ export default function ModelManagement(){
    {manage&&<Space wrap><Button disabled={busy} onClick={()=>edit('provider',selected)}>平台设置</Button><Button disabled={busy} onClick={()=>void test('connection')}>测试连接</Button><Button type="primary" disabled={busy} onClick={()=>edit('model')}>添加模型</Button><Popconfirm title="归档此平台？有子模型或引用时服务会拒绝。" disabled={busy} onConfirm={()=>act(async current=>{await request(`/model-providers/${encodeURIComponent(selected.id)}?expected_revision=${selected.revision}`,{method:'DELETE'});if(!current())return;sequence.current++;managementOpenRef.current=false;setManagementOpen(false);selectedRef.current=undefined;setSelected(undefined);setModels([]);setProviders(items=>items.filter(p=>p.id!==selected.id));await load();window.dispatchEvent(new Event('zhangpu:model-catalog-changed'));})}><Button disabled={busy} danger>归档平台</Button></Popconfirm></Space>}
   </div>
   {busy&&<p role="status" className="subtle">正在处理，请稍候…</p>}
-  {error&&<Alert type="error" message={errorTitle} description={<>{error}{failure&&(failure.code||failure.request_id)&&<p className={styles.errorReference}>{failure.code&&<span>错误码：{failure.code}</span>}{failure.request_id&&<span>请求编号：{failure.request_id}</span>}</p>}</>}/>}
+  {error&&<Alert type="error" message={errorTitle} description={<>{error}<SupportReference value={failure?.request_id}/></>}/>}
   <div className={styles.checkSummary}><strong>平台连接检查</strong>{selected&&checkView(connectionChecks[checkKey(currentIdentityEpoch(),selected)])}<p>以下为本页会话记录，仅对应当前配置；刷新页面后不保留。</p></div>
   <div className={styles.modelHeading}><h3>平台下的模型 <span>{models.length}</span></h3><p>连接测试检查平台服务；测试推理由你填写内容并主动发送到所选模型。</p></div>
   {modelsError&&<Alert type="error" message="模型读取失败" description={modelsError} action={<Button onClick={()=>void choose(selected)} loading={loading}>重试读取模型</Button>}/>}
@@ -172,7 +172,7 @@ export default function ModelManagement(){
    {title:'上下文 / 最大输出',render:(_,m)=>`${m.context_window} / ${m.max_output_tokens}`},
    {title:'操作',render:(_,m)=>manage?<Space wrap><Button size="small" disabled={busy} onClick={()=>edit('model',m)}>编辑</Button><Button size="small" disabled={busy} onClick={()=>prepareTrial(m.id)}>测试推理</Button><Popconfirm title="归档此模型？已有引用时服务会拒绝。" disabled={busy} onConfirm={()=>act(async current=>{await request(`/models/${encodeURIComponent(m.id)}?expected_revision=${m.revision}`,{method:'DELETE'});if(!current())return;await choose(selected);window.dispatchEvent(new Event('zhangpu:model-catalog-changed'));})}><Button size="small" disabled={busy} danger>归档</Button></Popconfirm></Space>:<span>只读</span>}
   ]}/>
- </>:<div className={styles.empty}><p>{providers.length?'选择一个平台查看模型与设置。':'创建平台后，可在这里管理模型与测试推理。'}</p>{error&&<Alert type="error" message={errorTitle} description={<>{error}{failure&&(failure.code||failure.request_id)&&<p className={styles.errorReference}>{failure.code&&<span>错误码：{failure.code}</span>}{failure.request_id&&<span>请求编号：{failure.request_id}</span>}</p>}</>}/>}</div>}
+ </>:<div className={styles.empty}><p>{providers.length?'选择一个平台查看模型与设置。':'创建平台后，可在这里管理模型与测试推理。'}</p>{error&&<Alert type="error" message={errorTitle} description={<>{error}<SupportReference value={failure?.request_id}/></>}/>}</div>}
  </section>
  </Modal>
  {manage&&<div className={styles.addFromTemplate} aria-label="底部添加平台入口"><span>需要新增模型平台？</span><Button type="link" disabled={busy} onClick={addProvider}>从模板添加平台</Button></div>}
@@ -180,7 +180,7 @@ export default function ModelManagement(){
   <p className="subtle">{testTarget?.providerName}{testTarget?.modelName&&` · ${testTarget.modelName}`}</p>
   {testTarget?.kind==='inference'&&<><label>测试内容<Input.TextArea aria-label="模型测试内容" value={trialText} maxLength={8000} showCount rows={5} disabled={busy} onChange={event=>setTrialText(event.target.value)}/></label><label>最大输出 Token<InputNumber aria-label="试答最大输出 Token" min={1} max={Math.min(393216,models.find(m=>m.id===testTarget.modelId)?.max_output_tokens||4096)} value={trialLimit} disabled={busy} onChange={setTrialLimit}/></label><p className="subtle">点击“发送测试内容”会使用此模型已配置的认证发送以上内容。成功表示请求已送达且取得有效响应，回答内容由你判断。</p></>}
   <div className={styles.checkSummary}><strong>{shownInference?.modelName?`最近推理 · ${shownInference.modelName}`:'当前模型最近推理'}</strong>{checkView(shownInference)}<p>仅本页会话记录；平台连接检查不会重新运行或覆盖模型推理验证。</p></div>
-  <div aria-live="polite" aria-busy={busy}>{busy?<p role="status">{testTarget?.kind==='inference'?'正在发送测试内容并等待模型响应…':'正在测试平台连接，请稍候…'}</p>:error?<Alert type="error" message={errorTitle} description={<>{error}{failure&&(failure.code||failure.request_id)&&<p className={styles.errorReference}>{failure.code&&<span>错误码：{failure.code}</span>}{failure.request_id&&<span>请求编号：{failure.request_id}</span>}</p>}</>}/>:notice?<Alert type="info" message={notice}/>:<p>填写内容后点击发送，查看本次结果。</p>}</div>
+  <div aria-live="polite" aria-busy={busy}>{busy?<p role="status">{testTarget?.kind==='inference'?'正在发送测试内容并等待模型响应…':'正在测试平台连接，请稍候…'}</p>:error?<Alert type="error" message={errorTitle} description={<>{error}<SupportReference value={failure?.request_id}/></>}/>:notice?<Alert type="info" message={notice}/>:<p>填写内容后点击发送，查看本次结果。</p>}</div>
   {testTarget?.kind==='inference'&&trialSent&&<section aria-label="本次模型试答结果"><p>请求发送：{trial?.sent===true?'已发送':trial?.sent===false?'未发送':'待服务端确认'} · 响应接收：{trial?.received===true?'已接收':trial?.received===false?'未接收':'待服务端确认'} · 耗时：{trial?.elapsed!==undefined?`${trial.elapsed} ms`:'尚无服务端计时'}</p>{trial?.truncated&&<Alert type="warning" message="回复达到输出上限，以下为截断内容"/>}{trial?.state==='empty'&&<Alert type="warning" message="模型已响应，但没有返回可见回答"/>}{trial?.state==='tool_request'&&<Alert type="warning" message="模型返回工具请求，本次试答不执行工具"/>}{trial?.answer!==undefined&&<div><h3>模型实际回答</h3><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',fontFamily:'inherit'}}>{trial.answer||'（空回答）'}</pre></div>}</section>}
  </Modal>
  <Modal zIndex={modalLayers.templates} getContainer={portalContainer} focusTriggerAfterClose={false} afterClose={restoreInnerFocus} keyboard={!editing&&!confirming} styles={{body:{maxHeight:'calc(100vh - 200px)',overflowY:'auto'}}} width={760} title="添加平台 · 选择模板" open={templatesOpen} footer={null} onCancel={()=>setTemplatesOpen(false)}>
@@ -190,7 +190,7 @@ export default function ModelManagement(){
   <div className={styles.templates}>{presets.filter(p=>p.id!=='custom').map(p=><article key={p.id}><h3>{p.name}</h3><p>{p.description}</p>{(p.endpoint_notes?.length>0||p.documentation_url)&&<details><summary>地址与使用说明</summary>{p.endpoint_notes?.map((note:string,index:number)=><p key={index}>{note}</p>)}{p.documentation_url&&<a href={p.documentation_url} target="_blank" rel="noopener noreferrer">官方说明 ↗</a>}</details>}<Button onClick={()=>edit('provider',undefined,p)}>使用模板</Button></article>)}<article><h3>自定义平台</h3><p>使用兼容 OpenAI 的服务地址，自行填写平台设置。</p><Button onClick={()=>edit('provider')}>自定义配置</Button></article></div>
  </Modal>
  <Modal zIndex={modalLayers.editor} getContainer={portalContainer} focusTriggerAfterClose={false} afterClose={restoreInnerFocus} keyboard={!confirming&&!busy} closable={!confirming&&!busy} cancelButtonProps={{disabled:busy||confirming}} centered styles={{body:{maxHeight:'calc(100vh - 200px)',overflowY:'auto'}}} forceRender width={620} title={editing?`${editing.value?'编辑':'添加'}${editing.kind==='provider'?'模型平台':'模型'}`:''} open={!!editing} confirmLoading={busy} okButtonProps={{disabled:!manage}} maskClosable={false} onCancel={async()=>{const epoch=currentIdentityEpoch();if(await checkLeave()===true&&valid(epoch)){setEditing(undefined);setDirty(false);form.resetFields();}}} onOk={()=>void save()}>
-  <Form form={form} layout="vertical" onValuesChange={()=>setDirty(true)}>{editing?.kind==='provider'?providerFields:modelFields}</Form>{error&&<Alert type="error" message={errorTitle} description={<>{error}{failure&&(failure.code||failure.request_id)&&<p className={styles.errorReference}>{failure.code&&<span>错误码：{failure.code}</span>}{failure.request_id&&<span>请求编号：{failure.request_id}</span>}</p>}</>}/>} 
+  <Form form={form} layout="vertical" onValuesChange={()=>setDirty(true)}>{editing?.kind==='provider'?providerFields:modelFields}</Form>{error&&<Alert type="error" message={errorTitle} description={<>{error}<SupportReference value={failure?.request_id}/></>}/>}
  </Modal>
  </div>;
 }

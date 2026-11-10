@@ -113,22 +113,67 @@ def publish_agent(*, agent_id, context, session):
 
 def agent_references(*, agent_id, context, session):
     get_resource(session, "agent", agent_id, context)
-    found = []
+    return _references(context, session).get(agent_id, [])
+
+
+def _references(context, session):
+    found = {}
     def walk(nodes):
         for node in nodes:
             config = node.get("config", {})
-            if node.get("type") == "agent" and config.get("agent_id") == agent_id:
+            if node.get("type") == "agent" and config.get("agent_id"):
                 yield config
             if isinstance(config.get("body"), dict):
                 yield from walk(config["body"].get("nodes", []))
     for kind in ("workflow", "run"):
         for resource in list_resources(session, kind, context):
             workflow = resource.get("workflow_snapshot", {}) if kind == "run" else resource
+            nested = set()
             for config in walk(workflow.get("nodes", [])):
-                found.append({"kind": kind, "id": resource["id"], "name": resource.get("name", ""), "agent_version_id": config.get("agent_version_id")})
-            if kind == "run" and resource.get("request", {}).get("agent_id") == agent_id and not any(x["id"] == resource["id"] for x in found):
-                found.append({"kind": kind, "id": resource["id"], "agent_version_id": resource["request"].get("agent_version_id")})
+                agent_id = config["agent_id"]
+                nested.add(agent_id)
+                found.setdefault(agent_id, []).append({"kind": kind, "id": resource["id"], "name": resource.get("name", ""), "agent_version_id": config.get("agent_version_id")})
+            request = resource.get("request") or {}
+            agent_id = request.get("agent_id")
+            if kind == "run" and agent_id and agent_id not in nested:
+                found.setdefault(agent_id, []).append({"kind": kind, "id": resource["id"], "agent_version_id": request.get("agent_version_id")})
     return found
+
+
+def _conversation_model(version):
+    chat = version.get("config", {}) if version else {}
+    if (agent_type(chat) == "simple" and chat.get("planner_mode") == "model"
+            and not any(chat.get(key) for key in ("main_workflow_id", "skill_bindings", "bindings", "document_tools"))):
+        return chat.get("model_config_id")
+    return None
+
+
+def list_conversations(*, context, session):
+    require_ai_access(context, session)
+    from app.resource_policy import directory
+    allowed = {item["id"] for item in directory(session, context, "agent") if item["access"]["execute"]}
+    latest = {}
+    for version in list_resources(session, "agent_version", context):
+        identifier = version["agent_id"]
+        if (identifier in allowed and version.get("status") == "published"
+                and (identifier not in latest or version["version"] > latest[identifier]["version"])):
+            latest[identifier] = version
+    items = []
+    for agent in list_resources(session, "agent", context):
+        version = latest.get(agent["id"])
+        model = _conversation_model(version)
+        if not model or agent.get("main_workflow_id") or agent.get("skill_bindings"):
+            continue
+        try:
+            load_config(model, context=context, session=session,
+                        expected_version=version["config"].get("model_config_version"))
+        except AppError as error:
+            if error.status_code >= 500:
+                raise
+            continue
+        items.append({"id": agent["id"], "name": agent["name"], "conversation_ready": True,
+                      "conversation_version_id": version["id"], "access": {"execute": True}})
+    return {"items": items}
 
 
 def list_agents(*, context, session, page=1, page_size=20, q="", status=""):
@@ -137,15 +182,15 @@ def list_agents(*, context, session, page=1, page_size=20, q="", status=""):
     items = []
     from app.resource_policy import directory
     directory_items=directory(session,context,'agent')
+    references = _references(context, session)
     for agent in list_resources(session, "agent", context):
         published = [v for v in versions if v["agent_id"] == agent["id"] and v.get("status") == "published"]
         latest=max(published,key=lambda value:value['version']) if published else None
-        chat=latest.get('config',{}) if latest else {}
-        chat_model=model_status(context=context,session=session,config_id=chat.get('model_config_id')) if chat.get('model_config_id') else {'configured':False}
-        chat_ready=bool(latest and agent_type(chat)=='simple' and chat.get('planner_mode')=='model' and chat_model['configured'] and not any(chat.get(key) for key in ('main_workflow_id','skill_bindings','bindings','document_tools')))
+        chat_model = _conversation_model(latest)
+        chat_ready = bool(chat_model and model_status(context=context, session=session, config_id=chat_model)["configured"])
         items.append({**agent_view(agent),"conversation_ready":chat_ready,"conversation_version_id":latest['id'] if chat_ready else None, "status": agent.get("status", "draft"), "tool_count": len(agent.get("bindings", [])),
                       "latest_version": max((v["version"] for v in published), default=0),
-                      "reference_count": len(agent_references(agent_id=agent["id"], context=context, session=session)),
+                      "reference_count": len(references.get(agent["id"], [])),
                       "model_configuration": model_status(context=context, session=session, config_id=agent.get("model_config_id")) if agent.get("planner_mode") == "model" else {"configured": False, "default_mode": "model"}})
     full_ids={item['id'] for item in items}
     access_by_id={item['id']:item['access'] for item in directory_items}

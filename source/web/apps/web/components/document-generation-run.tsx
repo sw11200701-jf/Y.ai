@@ -5,7 +5,7 @@ import {currentIdentityEpoch} from '@/lib/api';
 import {formatError,type FormattedError} from '@/lib/errors';
 import {documentNames,documentProblems,type DocumentDrafts} from '@/lib/document-content';
 import {deterministicActive,deterministicDocumentClient,deterministicRunLabels,deterministicSubmissionUncertain,type DeterministicDefinition,type DeterministicRun,type DeterministicTask,type DeterministicSnapshot} from '@/lib/document-deterministic';
-import {ErrorBanner} from './shared';
+import {ErrorBanner,SupportReference} from './shared';
 import ArtifactFileCards from './artifact-file-cards';
 const policyEvents=['zhangpu:permissions-changed','zhangpu:data-policy-changed','zhangpu:session-expired','zhangpu:access-denied'];
 export default function DocumentGenerationRun({definition,drafts,disabled=false,onActivityChange,onProblems}:{definition:DeterministicDefinition;drafts:DocumentDrafts;disabled?:boolean;onActivityChange:(active:boolean)=>void;onProblems:(issues:string[])=>void}){
@@ -25,7 +25,7 @@ export default function DocumentGenerationRun({definition,drafts,disabled=false,
   <Button type="primary" disabled={disabled||!!busy||!!task||uncertain||!definition.deterministicAvailable} loading={busy==='submit'} onClick={()=>void submit()}>生成文件（新任务）</Button>
   {uncertain&&<Alert type="warning" message="提交结果尚未确认，已停止重发" description={<><p>请先核查运行记录。再次明确提交会创建另一个新任务。</p><a href="?page=runs">打开运行记录核查</a></>}/>}
   {task&&<><Space wrap><Tag>{documentNames[task.toolId]}</Tag><Tag>{deterministicRunLabels[run?.status||'']||'状态待确认'}</Tag><a href={`?page=runs&run=${encodeURIComponent(task.runId)}`}>查看此运行</a></Space><span>运行：{task.runId}</span>
-   {snapshot&&<span>已记步骤：{snapshot.steps??'待记录'} · 已记模型调用：{snapshot.modelCalls??'待记录'}</span>}{run?.error&&<Alert type="error" message={run.error.code||'运行未完成'} description={run.error.message}/>}
+   {snapshot&&<span>已记步骤：{snapshot.steps??'待记录'} · 已记模型调用：{snapshot.modelCalls??'待记录'}</span>}{run?.error&&<Alert type="error" message="生成任务未完成" description={<>{formatError(run.error).message}<SupportReference value={task.runId}/></>}/>}
    {run?.status==='outcome_unknown'&&<Alert type="warning" message="生成结果待核查，不能恢复或重发此运行"/>}{run?.status==='cancelled'&&<Alert type="info" message="此任务已取消；再次生成需明确新建任务"/>}
    {run?.status==='succeeded'&&<Alert type={snapshot?.files.length?'success':'warning'} message={snapshot?.files.length?'文件已登记，可按当前权限下载并检查内容与版面':'运行已完成，文件登记尚未确认，请刷新状态'}/>}
    <Space wrap><Button disabled={!!busy} onClick={()=>void refresh(task)}>刷新生成状态</Button>{run?.canCancel&&<Button disabled={disabled||!!busy||controlUncertain} loading={busy==='cancel'} onClick={()=>void control('cancel')}>取消此生成任务</Button>}{run?.canResume&&<Button disabled={disabled||!!busy||controlUncertain} loading={busy==='resume'} onClick={()=>void control('resume')}>继续此生成任务</Button>}{run&&['succeeded','failed','cancelled','interrupted'].includes(run.status)&&<Button disabled={disabled||!!busy} onClick={()=>{readSerial.current++;taskRef.current=undefined;setTask(undefined);setRun(undefined);setSnapshot(undefined);setError('');setReadError('');setControlUncertain(false);}}>准备生成新文件</Button>}</Space>
