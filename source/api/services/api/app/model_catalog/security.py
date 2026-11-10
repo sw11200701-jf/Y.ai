@@ -46,16 +46,29 @@ def blocked_address(ip):
 
 def validate_model_address_policy(config):
     """Pure URL/literal-IP admission. Hostname DNS is rechecked at send time."""
-    url=validate_model_url(config.base_url)
-    host=urlsplit(url).hostname
+    return validate_model_endpoint(config.base_url, config.allow_private_network)
+
+
+def validate_model_endpoint(value, allow_private_network):
+    url = validate_model_url(value)
+    parsed = urlsplit(url)
+    if parsed.scheme == 'http' and not allow_private_network:
+        raise AppError('CONNECTION_BLOCKED', '公网模型必须使用 HTTPS；仅可为经授权的内网模型使用 HTTP', 403)
+    host = parsed.hostname
     try:
         address=ipaddress.ip_address(host)
     except ValueError:
         return url  # No DNS, socket, credentials or provider request in admission.
     address=blocked_address(address)
-    if not address.is_global and not config.allow_private_network:
-        raise AppError('CONNECTION_BLOCKED','内网或本机模型地址需要管理员明确允许',403)
+    enforce_model_transport(parsed, address, allow_private_network)
     return url
+
+
+def enforce_model_transport(parsed, address, allow_private_network):
+    if address.is_global and parsed.scheme == 'http':
+        raise AppError('CONNECTION_BLOCKED', '公网模型必须使用 HTTPS', 403)
+    if not address.is_global and not allow_private_network:
+        raise AppError('CONNECTION_BLOCKED', '内网或本机模型地址需要管理员明确允许', 403)
 
 
 async def approved_model_address(config):
@@ -89,8 +102,7 @@ async def approved_model_address(config):
             raise OSError()
         for value in addresses:
             ip = blocked_address(ipaddress.ip_address(value))
-            if not ip.is_global and not config.allow_private_network:
-                raise AppError('CONNECTION_BLOCKED', '内网或本机模型地址需要管理员明确允许', 403)
+            enforce_model_transport(parsed, ip, config.allow_private_network)
         return addresses[0]  # Caller MUST connect to this IP, retaining original Host/SNI.
     except PluginError as exc:
         raise AppError(exc.code, '模型服务地址被连接策略拒绝或无法解析', exc.status_code) from None

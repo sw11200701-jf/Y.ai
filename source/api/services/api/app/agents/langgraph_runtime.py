@@ -239,6 +239,10 @@ def build_agent_subgraph(*, config: dict, bridge, scope: str):
             estimate = (len(json.dumps({"messages": messages, "tools": tools}, ensure_ascii=False).encode()) + 2) // 3
             if estimate + checked["max_output_tokens"] > checked["context_budget"]:
                 raise AppError("CONTEXT_BUDGET_EXCEEDED", "消息、工具定义与输出预算超过上下文预算", 422)
+            from app.execution.model_network import prepare_model_address
+            async with asyncio.timeout(max(0, slot["deadline_at"] - time.time())):
+                await prepare_model_address(execution, model_config_id=checked["configuration_id"],
+                                            model_config_version=checked["config_version"])
 
         async def operation(execution, slot):
             if slot["rounds"] >= config.get("max_rounds", 4):

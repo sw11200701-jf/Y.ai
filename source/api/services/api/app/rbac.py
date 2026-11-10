@@ -142,7 +142,7 @@ def route_permissions(path,method):
         return [("applications.read",)] if method=="GET" else [("applications.manage",)]
     if head=='builtin-agents':
         if parts[-1]=='workflow-preview' and method=='POST':return [('chunker.config.read','chunker.config.manage')]
-        if parts[-1] in {'document-jobs','document-job-options'}:return [('page.ai','page.knowledge')]
+        if parts[-1] in {'document-jobs','document-job-options','document-job-budget'}:return [('page.ai','page.knowledge')]
         return [('chunker.config.view','chunker.config.read','chunker.config.manage')] if method=='GET' and len(parts)==1 else [('chunker.config.read','chunker.config.manage')] if method=='GET' else [('chunker.config.manage',)]
     if head=="run-approvers":return [RUN_PERMISSIONS]
     if head=="approvals":return [("runs.approve",)]

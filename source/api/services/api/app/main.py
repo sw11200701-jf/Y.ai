@@ -23,6 +23,8 @@ from app.model_catalog.router import router as model_catalog_router
 async def lifespan(app):
     from app.execution.retained_intents import startup_check
     startup_check()
+    from app.secrets import validate_master_key_configuration
+    validate_master_key_configuration()
     init_db()
     from app.knowledge.slicing_doc_conversion import configure as configure_doc_converter
     server_office = os.name != 'nt' and bool(os.environ.get('FINANCE_OFFICE_SOCKET'))
@@ -95,7 +97,10 @@ async def request_id(request: Request, call_next):
 @app.exception_handler(AppError)
 async def app_error(request: Request, exc: AppError):
     request.state.model_test_error_code = exc.code
-    return JSONResponse(status_code=exc.status_code, content={"error": exc.as_dict(), "request_id": request.state.request_id},headers=__import__("app.machine_auth",fromlist=["error_headers"]).error_headers(request,exc))
+    headers=__import__("app.machine_auth",fromlist=["error_headers"]).error_headers(request,exc)
+    if exc.code == "LOGIN_RATE_LIMIT" and isinstance(exc.details, dict) and "retry_after" in exc.details:
+        headers["Retry-After"] = str(exc.details["retry_after"])
+    return JSONResponse(status_code=exc.status_code, content={"error": exc.as_dict(), "request_id": request.state.request_id}, headers=headers)
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, exc: RequestValidationError):
@@ -116,6 +121,10 @@ async def unexpected_error(request: Request, exc: Exception):
 
 loaded_modules = []
 app.include_router(auth_router,prefix="/api/v1")
+from app.asset_archive import router as asset_archive_router
+app.include_router(asset_archive_router,prefix="/api/v1")
+from app.tool_egress import router as tool_egress_router
+app.include_router(tool_egress_router,prefix="/api/v1")
 from app.user_variables import router as user_variable_router
 app.include_router(user_variable_router,prefix="/api/v1")
 app.include_router(rbac_router,prefix="/api/v1")

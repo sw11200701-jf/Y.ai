@@ -13,7 +13,7 @@ from app.errors import AppError
 from app.plugins.errors import PluginError
 from app.plugins.specs import StrictModel
 from app.secrets import read_secret, store_secret
-from .security import approved_address, origin, validate_base_url
+from .security import approved_address, validate_base_url
 from app.plugins.permissions import require_page
 
 
@@ -63,12 +63,9 @@ async def save_connection(data: ConnectionWrite, context: BusinessContext, sessi
     require_page(context, session, "page.plugins")
     old = get_resource(session, "connection", connection_id, context, access="write") if connection_id else {}
     resource_id = connection_id or new_id("conn")
-    from app.settings import settings
-    allowed = getattr(context, "allowed_tool_origins", getattr(context, "allowed_origins", None))
-    if allowed is None:
-        allowed = getattr(settings, "tool_allowed_origins", None)
+    from app.tool_egress import origins_for_context
     try:
-        await approved_address(data.base_url, allowed if allowed is not None else [origin(data.base_url)])
+        await approved_address(data.base_url, origins_for_context(session, context))
     except PluginError as exc:
         raise AppError("CONNECTION_BLOCKED", exc.message, status_code=403) from exc
     ref = old.get("secret_ref")

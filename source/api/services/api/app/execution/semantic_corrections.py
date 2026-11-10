@@ -162,8 +162,8 @@ def correction_node(compiler,plan,step_id):
                 if index and execution.state.get('format_corrections_used',0)>=allowance(pinned['plan']):raise AppError('CHUNK_JOB_BUDGET_EXCEEDED','格式纠正预约调用数已耗尽',422)
                 data,_,_,_=validated_steps(pinned['plan'],read_step=reader,context=execution.context,session=execution.session,until=step_id)
                 preflight_semantic_model(pinned['plan'],step_id,data,context=execution.context,session=execution.session,format_feedback=feedback)
-                from app.execution.document_job_budget import require_model_time
-                require_model_time(pinned['plan'],execution.budget['deadline_epoch'])
+                from app.execution.document_request_wait import prepare_document_address
+                await prepare_document_address(pinned['plan'], execution)
             async def operation(execution):
                 _,binding,current=authorize(execution.session,execution.run_id);pinned=load_plan(execution.session,execution.context,current)
                 data,_,_,_=validated_steps(pinned['plan'],read_step=reader,context=execution.context,session=execution.session,until=step_id)

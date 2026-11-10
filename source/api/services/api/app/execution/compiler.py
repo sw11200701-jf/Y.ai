@@ -185,6 +185,8 @@ class ProductCompiler:
                 from app.execution.model_reservations import admit_model_context
                 from app.runner.fields import service_values
                 admit_model_context(execution,config=node.config,inputs=service_values(node,resolve(node.inputs,local["pool"])),resolved=resolved_model,node_type=node.type)
+                from app.execution.model_network import prepare_model_address
+                await prepare_model_address(execution, config=resolved_model)
             async def operation(execution):
                 from app.runner.service import emit
                 snapshot = execution.state

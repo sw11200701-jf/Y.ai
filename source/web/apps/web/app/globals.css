@@ -107,3 +107,7 @@ h1,h2,h3,.page-title h1,.panel-heading h2,.agent-card h3,.resource-name strong{c
 .home-recents .recent-item{min-width:0;cursor:pointer;padding:13px 0}.home-recents .recent-item strong,.home-recents .recent-item>span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}.home-recents .recent-item:focus-visible{outline:2px solid var(--primary-deep);outline-offset:3px;border-radius:5px}
 @media(max-width:1150px){.home-recents,.home-recents[data-count="2"]{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:700px){.home-recents{gap:14px}.home-recents .recent-panel{padding:18px}.home-recents .recent-state{min-height:64px}}
+
+.archivable-agent-card { display: flex; flex-direction: column; min-width: 0; }
+.archivable-agent-card > .agent-card { flex: 1; width: 100%; }
+.asset-archive-actions { margin-top: 6px; }

@@ -2,9 +2,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import styles from './studio.module.css';
 
-const preferenceKey = 'zhangpu.workflow.panels.v3';
+const preferenceKey = 'zhangpu.workflow.panels.v4';
 type Side = 'library' | 'inspector';
-const defaults = { library: .18, inspector: .44 };
+const defaults = { library: .18, inspector: .30 };
 /** Preferences contain geometry only, never workflow data or account information. */
 export function CanvasWorkspace({ library, inspector, children, inspectorOpen, onInspectorOpenChange }: { library: ReactNode; inspector: ReactNode; children: ReactNode; inspectorOpen?: boolean; onInspectorOpenChange?: (open: boolean) => void }) {
   const root = useRef<HTMLDivElement>(null);
@@ -18,9 +18,10 @@ export function CanvasWorkspace({ library, inspector, children, inspectorOpen, o
   const loaded = useRef(false);
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(preferenceKey) || localStorage.getItem('zhangpu.workflow.panels.v2') || 'null');
+      const current = localStorage.getItem(preferenceKey);
+      const saved = JSON.parse(current || localStorage.getItem('zhangpu.workflow.panels.v3') || localStorage.getItem('zhangpu.workflow.panels.v2') || 'null');
       if (saved && ['library', 'inspector'].every(side => Number.isFinite(saved[side]) && saved[side] >= .1 && saved[side] <= .7)) {
-        setRatios({ library: saved.library, inspector: Math.max(.38,saved.inspector) });
+        setRatios({ library: saved.library, inspector: current ? saved.inspector : Math.min(.36, saved.inspector) });
         if (typeof saved.libraryCollapsed === 'boolean') setClosed(previous => ({ ...previous, library: saved.libraryCollapsed }));
       }
     } catch { /* Unavailable or old preferences do not block the editor. */ }
@@ -42,7 +43,7 @@ export function CanvasWorkspace({ library, inspector, children, inspectorOpen, o
   }, [ratios, collapsed.library]);
   useEffect(() => { if (compact && inspectorOpen) setClosed(previous => ({ ...previous, library: true })); }, [compact, inspectorOpen]);
   // Both columns shrink proportionally before either can consume the center.
-  const wanted = { library: closed.library ? 36 : Math.max(180, Math.min(320, total * ratios.library)), inspector: closed.inspector ? 36 : Math.max(360, Math.min(760, total * ratios.inspector)) };
+  const wanted = { library: closed.library ? 36 : Math.max(180, Math.min(320, total * ratios.library)), inspector: closed.inspector ? 36 : Math.max(280, Math.min(480, total * ratios.inspector)) };
   const budget = Math.max(72, total - Math.min(300, total - 84) - 12);
   const excess = Math.max(0, wanted.library + wanted.inspector - budget);
   const flexible = (closed.library ? 0 : wanted.library - 36) + (closed.inspector ? 0 : wanted.inspector - 36);
@@ -53,7 +54,7 @@ export function CanvasWorkspace({ library, inspector, children, inspectorOpen, o
     if (side === 'inspector') inspectorChange.current?.(!next);
     else if (compact && !next) inspectorChange.current?.(false);
   };
-  const maximum = (side: Side) => Math.max(160, Math.min(side==='inspector'?760:320, total - widths[side === 'library' ? 'inspector' : 'library'] - 312));
+  const maximum = (side: Side) => Math.max(160, Math.min(side==='inspector'?480:320, total - widths[side === 'library' ? 'inspector' : 'library'] - 312));
   const resize = (side: Side, width: number) => {
     setRatios(previous => ({ ...previous, [side]: Math.max(160, Math.min(maximum(side), width)) / total }));
   };

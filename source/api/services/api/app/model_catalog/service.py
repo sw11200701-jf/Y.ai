@@ -13,7 +13,7 @@ from app.auth import validate_context
 from app.rbac import require_permission, require_any_permission, RUN_PERMISSIONS, audit
 from app.errors import AppError
 from .schemas import ModelWrite, Capabilities
-from .security import validate_model_url
+from .security import validate_model_endpoint, validate_model_url
 
 PROVIDER = 'model_provider'
 MODEL = 'model_configuration'
@@ -96,6 +96,8 @@ def credential_changes(body, old=None):
     if raw and body.clear_api_key:
         raise AppError('VALIDATION_ERROR', '不能同时提交密钥和清除密钥', 422)
     endpoint = validate_model_url(values.get('base_url', old.get('base_url')))
+    if not old or raw or {'base_url', 'allow_private_network'} & values.keys():
+        validate_model_endpoint(endpoint, values.get('allow_private_network', old.get('allow_private_network', False)))
     values['base_url'] = endpoint
     if old.get('secret_ref') and endpoint != old['base_url'] and not (raw or body.clear_api_key or body.retain_api_key):
         raise AppError('VALIDATION_ERROR', '更换地址时请明确确认沿用密钥或提交新密钥', 422)

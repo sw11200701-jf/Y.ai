@@ -1,16 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
-const ts = require('typescript');
 const React = require('react');
 const { create, act } = require('react-test-renderer');
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-function compile(file, dependencies = {}) {
-  const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  const module = { exports: {} }; vm.runInNewContext(code, { module, exports: module.exports, require: id => dependencies[id] || require(id) }); return module.exports;
-}
+const compile = require('./test-module.cjs');
 const errors = compile(path.resolve(__dirname, '../errors.ts'));
 const labels = compile(path.join(__dirname, 'labels.ts'));
 const fields = compile(path.resolve(__dirname, '../../components/workflow-studio/schema-fields.tsx'), { '../model-picker': {__esModule:true,default:props=>React.createElement('model-picker',props)}, '@/lib/workflow/labels': labels, './studio.module.css': { __esModule: true, default: {} } });

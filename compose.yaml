@@ -29,7 +29,7 @@ services:
       DATABASE_URL: sqlite:////data/demo.sqlite3
       FINANCE_DEVELOPMENT_HTTP: 'true'
       FINANCE_DEVELOPMENT_COOKIE_SCOPE: ordinary_dev
-      FINANCE_ALLOWED_WEB_ORIGINS: 'http://127.0.0.1:${ZHANGPU_WEB_PORT:-3271}'
+      FINANCE_ALLOWED_WEB_ORIGINS: 'http://127.0.0.1:${ZHANGPU_WEB_PORT:-3271},http://localhost:${ZHANGPU_WEB_PORT:-3271}'
       FINANCE_APPLICATION_API_ENABLED: 'true'
       FINANCE_APPLICATION_API_PUBLIC_BASE_URL: 'http://127.0.0.1:${ZHANGPU_WEB_PORT:-3271}/api/open/v1'
       FINANCE_KNOWLEDGE_PUBLIC_BASE_URL: 'http://127.0.0.1:${ZHANGPU_WEB_PORT:-3271}'
@@ -37,7 +37,8 @@ services:
       FINANCE_OFFICE_CONVERTER_ID: '${ZHANGPU_OFFICE_IMAGE_ID:-sha256:7b50c3a1f1e2269782b3f37244ce2a768176e9d5e2725f3f77adacad2902cfb7}'
       LANGSMITH_TRACING: 'false'
       LANGCHAIN_TRACING_V2: 'false'
-      TOOL_ALLOWED_ORIGINS: https://tools-not-configured.invalid
+      RUN_RETENTION_DAYS: '${ZHANGPU_RUN_RETENTION_DAYS:-90}'
+      TOOL_ALLOWED_ORIGINS: '${ZHANGPU_TOOL_ALLOWED_ORIGINS:-https://tools-not-configured.invalid}'
     volumes:
       - development-data:/data
       - type: volume

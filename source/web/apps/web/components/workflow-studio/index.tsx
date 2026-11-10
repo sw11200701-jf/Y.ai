@@ -3,7 +3,7 @@ import {UserVariables} from './user-variables';
 import {redefineVariables} from '@/lib/workflow/variable-definitions';
 import {timedLoad,loadClock,recordLoad} from '@/lib/load-timing';
 import { menuLabels } from '@/lib/ui-labels';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Background, Controls, MiniMap, ReactFlow, ReactFlowProvider, useReactFlow, type Connection, type Edge, type NodeChange, type EdgeChange } from '@xyflow/react';
 import registrySnapshot from '../../../../contracts/node-registry.json';
 import { App, Input, Modal } from 'antd';
@@ -22,7 +22,7 @@ import { newMessageWorkflow, initialWorkflowMessage, workflowMessageEnvelope, wo
 import { NodeLibrary } from './node-library';
 import { LinkedWorkflow } from './linked-workflow';
 import { JsonEditor, SchemaFields } from './schema-fields';
-import { StudioNode, type FlowNode } from './studio-node';
+import { StudioNode, portLabel, type FlowNode } from './studio-node';
 import { errorMessage } from '@/lib/errors';
 import { typeLabel } from '@/lib/workflow/labels';
 import { CanvasWorkspace } from './canvas-workspace';
@@ -47,6 +47,9 @@ import WorkflowFileTools from '../workflow-file-tools';
 import {workflowFileClient} from '@/lib/workflow-file-api';
 import styles from './studio.module.css';
 
+type Graph = Pick<WorkflowDefinition, 'nodes' | 'edges'>;
+const historyLimit = 30;
+const nodeSize = { width: 215, height: 105 };
 const nodeTypes = { studio: StudioNode };
 const emptyResources: StudioResources = { agents: [], agentVersions: [], models: [], documents: [], plugins: [], versions: [], connections: [], imports: [], warnings: [] };
 const pendingRegistry = { ...registrySnapshot, items: registrySnapshot.items.map(d => ({ ...d, status: 'unavailable', reason: '实时注册表未连接，仅供浏览节点目录' })) } as unknown as NodeRegistry;
@@ -58,9 +61,6 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
   const [fileMode,setFileMode]=useState<'import'|'export'|null>(null);const fileCreating=useRef(false);
   const [saveOpen,setSaveOpen]=useState(false);const [saveName,setSaveName]=useState('');
   const actionPending = useRef(false); const savePending = useRef(false); const navigationPending = useRef(false);
-  const successDialogs = useRef(new Set<{ destroy: () => void }>());
-  const closeSuccessDialogs = useCallback(() => { const dialogs = [...successDialogs.current]; successDialogs.current.clear(); dialogs.forEach(dialog => dialog.destroy()); }, []);
-  useEffect(() => closeSuccessDialogs, [closeSuccessDialogs]);
   const [nodeDraftDirty, setNodeDraftDirty] = useState(false); const [inspectorOpen, setInspectorOpen] = useState(false); const [linkedAttempt, setLinkedAttempt] = useState(0);
   const showInspector = (next: 'node' | 'workflow') => { setTab(next); setInspectorOpen(true); };
   const listRequest = useRef(0);
@@ -71,6 +71,11 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
   const [readonlyVariables, setReadonlyVariables] = useState<VariableOption[]>([]);
   const [variableError, setVariableError] = useState('');const [customUserVariables,setCustomUserVariables]=useState<ObjectValue[]>([]);
   useEffect(()=>{let live=true;const epoch=currentIdentityEpoch();request<{items:ObjectValue[]}>('/user-variables').then(r=>{if(live&&epoch===currentIdentityEpoch())setCustomUserVariables(r.items);},()=>{});return()=>{live=false;};},[]);
+  const history = useRef<{ undo: Graph[]; redo: Graph[] }>({ undo: [], redo: [] });
+  const dragStart = useRef<Graph | null>(null);
+  const clearHistory = () => { history.current = { undo: [], redo: [] }; dragStart.current = null; };
+  const [graphError, setGraphError] = useState('');
+  const [graphIssue, setGraphIssue] = useState<{ nodeId: string; message: string } | null>(null);
   const [notice, setNotice] = useState(''); const [error, setError] = useState(''); const [search, setSearch] = useState(''); const [listSearch, setListSearch] = useState('');
   const [selected, setSelected] = useState<string[]>([]); const [selectedEdges, setSelectedEdges] = useState<string[]>([]); const [session, setSession] = useState(0);
   const [measurements, setMeasurements] = useState<Record<string, { width: number; height: number }>>({});
@@ -91,7 +96,7 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
   const alive = useRef(true); const resourceTicket = useRef(0);
   const canvas = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition, fitView } = useReactFlow<FlowNode>(); const root = useRef<HTMLDivElement>(null); const serial = useRef(0); const latest = useRef(workflow); latest.current = workflow;
-  const dirty = Boolean(workflow && (JSON.stringify(workflow) !== baseline || Object.values(invalid).some(Boolean) || saveOpen && saveName !== workflow.name)); const legacy = workflow ? isLegacy(workflow) : false;
+  const dirty = Boolean(workflow && (JSON.stringify(workflow) !== baseline || nodeDraftDirty || Object.values(invalid).some(Boolean) || saveOpen && saveName !== workflow.name)); const legacy = workflow ? isLegacy(workflow) : false;
   const versionLabel = typeof publishedVersion === 'object' ? publishedVersion.version : publishedVersion;
   const canPublish = Boolean(embedded && agentId && onPublish && workflow?.id && workflowId === workflow.id && linkedId === workflow.id);
   const catalog = registry || pendingRegistry;
@@ -111,7 +116,7 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
   useEffect(() => { let current = true; alive.current = true; const epoch = accountEpoch(); void refreshVariables(); void refreshRegistry().finally(()=>{if(current&&epoch===accountEpoch())setLoading(false);});void refreshList().catch(e=>{if(current&&epoch===accountEpoch())setError(messageOf(e));});void refreshResources().catch(e=>{if(current&&epoch===accountEpoch())setError(messageOf(e));}); return () => { current = false; alive.current = false; serial.current++; }; }, [refreshList, refreshRegistry, refreshResources, refreshVariables]);
   useEffect(() => { if (!dirty) return; const prevent = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; }; window.addEventListener('beforeunload', prevent); return () => window.removeEventListener('beforeunload', prevent); }, [dirty]);
   useEffect(() => { const change = () => setFullScreen(document.fullscreenElement === root.current); document.addEventListener('fullscreenchange', change); return () => document.removeEventListener('fullscreenchange', change); }, []);
-  const open = (value: WorkflowDefinition | null, saved = true, fresh = false) => { dismissLeave(); closeSuccessDialogs(); actionPending.current = false; savePending.current = false; runControlPending.current = false; setInspectorOpen(false); serial.current++; setSession(s => s + 1); setWorkflow(value ? clone(value) : null); setTestInputs(inputDefaults(value?.input_schema || {}, {})); setMessage(initialWorkflowMessage(value)); setUploading(false); setBaseline(saved || fresh ? JSON.stringify(value) : ''); setSelected([]); setSelectedEdges([]); setMeasurements({}); setInvalid({}); setRun(null); setRunWorkflow(null); setTestNode(null); setTestScopePath([]); expectedTarget.current = null; setApprovalOpen(false); setSubflowId(''); setTraces([]); setTraceError(''); setApprovals([]); setEvents([]); setRunError(''); setResultNode(''); setResultOpen(false); setError(''); setNotice(''); setSaveOpen(false); setTab('node'); };
+  const open = (value: WorkflowDefinition | null, saved = true, fresh = false) => { dismissLeave(); clearHistory(); setGraphError(''); setGraphIssue(null); actionPending.current = false; savePending.current = false; runControlPending.current = false; setInspectorOpen(false); serial.current++; setSession(s => s + 1); setWorkflow(value ? clone(value) : null); setTestInputs(inputDefaults(value?.input_schema || {}, {})); setMessage(initialWorkflowMessage(value)); setUploading(false); setBaseline(saved || fresh ? JSON.stringify(value) : ''); setSelected([]); setSelectedEdges([]); setMeasurements({}); setInvalid({}); setRun(null); setRunWorkflow(null); setTestNode(null); setTestScopePath([]); expectedTarget.current = null; setApprovalOpen(false); setSubflowId(''); setTraces([]); setTraceError(''); setApprovals([]); setEvents([]); setRunError(''); setResultNode(''); setResultOpen(false); setError(''); setNotice(''); setSaveOpen(false); setTab('node'); };
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => {
     if (!embedded) return;
@@ -127,13 +132,15 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
     } catch (e) { if (alive.current && token === serial.current && epoch === accountEpoch()) setError(messageOf(e)); }
     finally { if (alive.current && epoch === accountEpoch() && requestId === linkedRequest.current) setLinkedLoading(false); } })();
   }, [embedded, agentId, workflowId, linkedAttempt]);
+  const creationRegistry = createOnOpen && initialMessageKind ? registry : null;
+  const creationRegistryError = createOnOpen && initialMessageKind ? registryError : '';
   useEffect(()=>{
     if(embedded||!workflowId&&!createOnOpen||workflowId&&latest.current?.id===workflowId||createOnOpen&&latest.current)return;
     let live=true;const epoch=accountEpoch();setLinkedLoading(true);setError('');
-    if(createOnOpen){if(initialMessageKind&&!registry){setLinkedLoading(!registryError);setError(registryError?`消息入口目录尚未就绪：${registryError}`:'');return;}try{open(initialMessageKind?newMessageWorkflow(registry!,initialMessageKind):newWorkflow(),false,true);}catch(error){setError(messageOf(error));}setLinkedLoading(false);return;}
+    if(createOnOpen){if(initialMessageKind&&!creationRegistry){setLinkedLoading(!creationRegistryError);setError(creationRegistryError?`消息入口目录尚未就绪：${creationRegistryError}`:'');return;}try{open(initialMessageKind?newMessageWorkflow(creationRegistry!,initialMessageKind):newWorkflow(),false,true);}catch(error){setError(messageOf(error));}setLinkedLoading(false);return;}
     void timedLoad('workflow',()=>workflowApi.get(workflowId!)).then(value=>{if(live&&epoch===accountEpoch())open(value);}).catch(e=>{if(live&&epoch===accountEpoch())setError(messageOf(e));}).finally(()=>{if(live&&epoch===accountEpoch())setLinkedLoading(false);});
     return()=>{live=false;};
-  },[embedded,workflowId,createOnOpen,initialMessageKind,linkedAttempt,registry,registryError]);
+  },[embedded,workflowId,createOnOpen,initialMessageKind,linkedAttempt,creationRegistry,creationRegistryError]);
   useEffect(() => { const clear = () => { open(null); setItems([]); setResources(emptyResources); setRegistry(null); setReadonlyVariables([]); setVariableError(''); setAgent(null); setLinkedId(null); setMessage(emptyMessage()); setUploading(false); setBusy(''); setLoading(false); }; window.addEventListener('zhangpu:session-expired', clear); return () => window.removeEventListener('zhangpu:session-expired', clear); }, []);
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
   const interaction = useRef({ busy, saveOpen }); interaction.current = { busy, saveOpen };
@@ -164,39 +171,141 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
   useEffect(() => { onLeaveGuardChange?.(canLeave); return () => onLeaveGuardChange?.(null); }, [canLeave, onLeaveGuardChange]);
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   const readOnly=workflow?.access?.edit===false||agent?.access?.edit===false;const executeAllowed=workflow?.access?.execute!==false&&agent?.access?.execute!==false;
-  const mutate = (update: (w: WorkflowDefinition) => WorkflowDefinition) => { if (!readOnly&&!busy && !actionPending.current && !runControlPending.current) setWorkflow(w => w ? update(w) : w); };
+  const canEdit = () => !readOnly && !busy && !actionPending.current && !runControlPending.current;
+  const rememberGraph = (graph: Graph) => {
+    const { undo } = history.current;
+    undo.push({ nodes: graph.nodes, edges: graph.edges });
+    if (undo.length > historyLimit) undo.shift();
+    history.current.redo = [];
+  };
+  const mutate = (update: (value: WorkflowDefinition) => WorkflowDefinition, recordGraph = false) => {
+    const previous = latest.current;
+    if (!previous || !canEdit()) return;
+    const next = update(previous);
+    if (next === previous) return;
+    if (recordGraph) rememberGraph(previous);
+    latest.current = next;
+    setWorkflow(next);
+    setGraphError('');
+    setGraphIssue(null);
+  };
+  const changeHistory = (direction: 'undo' | 'redo') => {
+    const previous = latest.current;
+    if (!previous || !canEdit() || nodeDraftDirty || subflowId || dragStart.current) return;
+    const next = history.current[direction].pop();
+    if (!next) return;
+    history.current[direction === 'undo' ? 'redo' : 'undo'].push({ nodes: previous.nodes, edges: previous.edges });
+    mutate(value => ({ ...value, ...next }));
+    setSelected([]);
+    setSelectedEdges([]);
+    setInspectorOpen(false);
+  };
   const node = workflow?.nodes.find(n => n.id === selected[0]); const definition = catalog.items.find(d => d.type === node?.type);
   const variables = useMemo(() => workflow && node ? availableVariables(workflow, node.id, registry, readonlyVariables,customUserVariables) : [], [workflow, node, registry, readonlyVariables,customUserVariables]);
   const nodeStates = useMemo(() => eventNodeStates(events), [events]);
   const runScopePath = run?.execution_identity?.kind === 'node_test' ? run.execution_identity.scope_path || [] : [];
   const runViewWorkflow = useMemo(() => { const graph = runWorkflow || workflow; if (!graph) return null; try { return scopeWorkflow(graph, runScopePath); } catch { return null; } }, [workflow, runWorkflow, JSON.stringify(runScopePath)]);
   const progress = useMemo(() => runViewWorkflow ? topLevelProgress(run?.execution_identity?.kind === 'node_test' ? { ...runViewWorkflow, nodes: runViewWorkflow.nodes.filter(node => node.id === run.execution_identity.node_id) } : runViewWorkflow, nodeStates) : null, [runViewWorkflow, nodeStates, run?.execution_identity]);
-  const flowNodes: FlowNode[] = useMemo(() => workflow?.nodes.map((n, i) => ({ id: n.id, type: 'studio', position: positionOf(n, i), selected: selected.includes(n.id), measured: measurements[n.id], data: { node: n, definition: catalog.items.find(d => d.type === n.type), ports: outputPorts(n, catalog.items.find(d => d.type === n.type)), runStatus: runScopePath.length ? undefined : nodeStates[n.id] } })) || [], [workflow, selected, catalog, nodeStates, measurements, JSON.stringify(runScopePath)]);
-  const flowEdges: Edge[] = useMemo(() => workflow?.edges.map(e => ({ id: edgeKey(e), source: e.source, target: e.target, sourceHandle: e.source_port || 'default', targetHandle: e.target_port || 'default', selected: selectedEdges.includes(edgeKey(e)), label: e.source_port && e.source_port !== 'default' ? e.source_port : undefined, style: { stroke: 'var(--primary, #718ba9)', strokeWidth: 1.7 } })) || [], [workflow, selectedEdges]);
+  const flowNodes: FlowNode[] = useMemo(() => workflow?.nodes.map((n, i) => ({ id: n.id, type: 'studio', position: positionOf(n, i), selected: selected.includes(n.id), measured: measurements[n.id], data: { node: n, definition: catalog.items.find(d => d.type === n.type), ports: outputPorts(n, catalog.items.find(d => d.type === n.type)), runStatus: runScopePath.length ? undefined : nodeStates[n.id], issue: graphIssue?.nodeId === n.id ? graphIssue.message : undefined } })) || [], [workflow, selected, catalog, nodeStates, measurements, graphIssue, JSON.stringify(runScopePath)]);
+  const flowEdges: Edge[] = useMemo(() => workflow?.edges.map(e => ({ id: edgeKey(e), source: e.source, target: e.target, sourceHandle: e.source_port || 'default', targetHandle: e.target_port || 'default', selected: selectedEdges.includes(edgeKey(e)), label: e.source_port && e.source_port !== 'default' ? portLabel(workflow.nodes.find(n => n.id === e.source), e.source_port) : undefined, style: { stroke: 'var(--primary, #718ba9)', strokeWidth: 1.7 } })) || [], [workflow, selectedEdges]);
   const nodesChange = (changes: NodeChange<FlowNode>[]) => {
     // Controlled React Flow nodes must retain ResizeObserver measurements across edits.
     // Otherwise re-creating data objects drops measured dimensions and blanks the minimap.
     const dimensions = changes.filter(c => c.type === 'dimensions');
     if (dimensions.length) setMeasurements(prev => { let next = prev; dimensions.forEach(c => { if (c.type === 'dimensions' && c.dimensions && (prev[c.id]?.width !== c.dimensions.width || prev[c.id]?.height !== c.dimensions.height)) { if (next === prev) next = { ...prev }; next[c.id] = c.dimensions; } }); return next; });
     const selection = changes.filter(c => c.type === 'select');
-    if (selection.some(change => change.type === 'select' && change.selected)) showInspector('node');
-    if (selection.length) setSelected(prev => { const next = new Set(prev); selection.forEach(c => { if (c.type === 'select') c.selected ? next.add(c.id) : next.delete(c.id); }); return [...next]; });
-    if (busy) return;
-    const removed = new Set(changes.filter(c => c.type === 'remove').map(c => c.id));
-    const positions = changes.filter(c => c.type === 'position');
-    if (removed.size || positions.length) mutate(w => ({ ...w, nodes: w.nodes.filter(n => !removed.has(n.id)).map(n => { const change = positions.find(c => c.id === n.id); return change?.type === 'position' && change.position ? { ...n, ui: { ...n.ui, position: change.position } } : n; }), edges: w.edges.filter(e => !removed.has(e.source) && !removed.has(e.target)) }));
+    if (!nodeDraftDirty && selection.length) setSelected(prev => { const next = new Set(prev); selection.forEach(c => { if (c.type === 'select') c.selected ? next.add(c.id) : next.delete(c.id); }); return [...next]; });
+    const positions = changes.filter(change => change.type === 'position');
+    if (!positions.length || nodeDraftDirty) return;
+    mutate(value => {
+      const nodes = value.nodes.map((item, index) => {
+        const position = positions.find(change => change.id === item.id)?.position;
+        const previous = positionOf(item, index);
+        return position && (position.x !== previous.x || position.y !== previous.y)
+          ? { ...item, ui: { ...item.ui, position } }
+          : item;
+      });
+      return nodes.some((item, index) => item !== value.nodes[index]) ? { ...value, nodes } : value;
+    }, !dragStart.current);
+  };
+  const finishDrag = () => {
+    const previous = dragStart.current, current = latest.current;
+    dragStart.current = null;
+    if (previous && current && previous.nodes !== current.nodes) {
+      rememberGraph(previous);
+      setWorkflow({ ...current });
+    }
   };
   const edgesChange = (changes: EdgeChange[]) => {
-    const removed = new Set(changes.filter(c => c.type === 'remove').map(c => c.id));
-    const selection = changes.filter(c => c.type === 'select');
-    if (selection.length) setSelectedEdges(prev => { const next = new Set(prev); selection.forEach(c => { if (c.type === 'select') c.selected ? next.add(c.id) : next.delete(c.id); }); return [...next]; });
-    if (removed.size) mutate(w => ({ ...w, edges: w.edges.filter(e => !removed.has(edgeKey(e))) }));
+    const selection = changes.filter(change => change.type === 'select');
+    if (selection.length) setSelectedEdges(previous => {
+      const next = new Set(previous);
+      selection.forEach(change => change.selected ? next.add(change.id) : next.delete(change.id));
+      return [...next];
+    });
   };
-  const connect = (c: Connection) => { if (!workflow || busy) return; const edge = { source: c.source, target: c.target, source_port: c.sourceHandle || 'default', target_port: c.targetHandle || 'default' }; const why = connectionError(workflow, edge, registry); if (why) { setError(why); return; } setError(''); mutate(w => ({ ...w, edges: [...w.edges, edge] })); };
-  const add = (def: NodeDefinition, position?: { x: number; y: number }) => { if (!workflow || busy || legacy || def.status === 'unavailable'&&def.configurable!==true) return; if (workflow.nodes.length >= (registry?.limits.max_nodes || 64)) { setError('已达到节点数量上限'); return; } const entryError = entryConflict(workflow, def); if (entryError) { setError(entryError); return; } const bounds = canvas.current?.getBoundingClientRect(); const next = newNode(def, position || screenToFlowPosition({ x: (bounds?.left || 0) + (canvas.current?.clientWidth || 600) / 2, y: (bounds?.top || 0) + (canvas.current?.clientHeight || 400) / 2 })); mutate(w => ({ ...w, nodes: [...w.nodes, next] })); setSelected([next.id]); showInspector('node'); };
-  const removeSelected = () => { const ids = new Set(selected); mutate(w => ({ ...w, nodes: w.nodes.filter(n => !ids.has(n.id)), edges: w.edges.filter(e => !ids.has(e.source) && !ids.has(e.target) && !selectedEdges.includes(edgeKey(e))) })); setSelected([]); setSelectedEdges([]); };
-  const duplicate = () => { if (!workflow || !node || busy) return; if (isEntryType(node.type, definition)) { setError('消息触发或兼容入口不能直接复制，请从节点库选择另一种触发类型'); return; } const copy = clone(node); copy.id = `${node.type}_${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`; const p = positionOf(node, 0); copy.ui = { ...copy.ui, position: { x: p.x + 45, y: p.y + 120 }, label: (copy.ui?.label || definition?.label || node.type) + ' 副本' }; mutate(w => ({ ...w, nodes: [...w.nodes, copy] })); setSelected([copy.id]); showInspector('node'); };
-  const updateNode = (fields: ObjectValue) => mutate(w => ({ ...w, nodes: w.nodes.map(n => n.id === node?.id ? { ...n, ...fields } : n) }));
+  const connect = (connection: Connection) => {
+    const current = latest.current;
+    if (!current || !canEdit() || nodeDraftDirty) return;
+    const edge = { source: connection.source, target: connection.target, source_port: connection.sourceHandle || 'default', target_port: connection.targetHandle || 'default' };
+    const issue = connectionError(current, edge, registry);
+    if (issue) { setGraphError(issue); return; }
+    mutate(value => ({ ...value, edges: [...value.edges, edge] }), true);
+  };
+  const availablePosition = (current: WorkflowDefinition, position: { x: number; y: number }) => {
+    const next = { ...position };
+    while (current.nodes.some((item, index) => {
+      const other = positionOf(item, index);
+      const size = measurements[item.id] || nodeSize;
+      return next.x < other.x + size.width + 20 && next.x + nodeSize.width + 20 > other.x
+        && next.y < other.y + size.height + 20 && next.y + nodeSize.height + 20 > other.y;
+    })) next.y += nodeSize.height + 20;
+    return next;
+  };
+  const add = (def: NodeDefinition, position?: { x: number; y: number }) => {
+    const current = latest.current;
+    if (!current || !canEdit() || nodeDraftDirty || legacy || def.status === 'unavailable' && def.configurable !== true) return;
+    if (current.nodes.length >= (registry?.limits.max_nodes || 64)) { setGraphError('已达到节点数量上限'); return; }
+    const issue = entryConflict(current, def);
+    if (issue) { setGraphError(issue); return; }
+    const bounds = canvas.current?.getBoundingClientRect();
+    const center = position || screenToFlowPosition({ x: (bounds?.left || 0) + (bounds?.width || 600) / 2, y: (bounds?.top || 0) + (bounds?.height || 400) / 2 });
+    const next = newNode(def, availablePosition(current, { x: center.x - nodeSize.width / 2, y: center.y - nodeSize.height / 2 }));
+    mutate(value => ({ ...value, nodes: [...value.nodes, next] }), true);
+    setSelected([next.id]);
+    setSelectedEdges([]);
+    setInspectorOpen(false);
+  };
+  const removeSelection = (nodeIds: string[], edgeIds: string[]) => {
+    const current = latest.current;
+    if (!current || !canEdit() || nodeDraftDirty || !nodeIds.length && !edgeIds.length) return;
+    const nodes = new Set(nodeIds), edges = new Set(edgeIds);
+    const entries = current.nodes.filter(item => isEntryType(item.type, catalog.items.find(def => def.type === item.type)));
+    if (entries.length && entries.every(item => nodes.has(item.id)) &&
+      !window.confirm('本次删除包含最后一个流程入口。删除后需要添加新的入口才能运行，也可通过撤销恢复。确定删除？')) return;
+    mutate(value => ({
+      ...value,
+      nodes: value.nodes.filter(item => !nodes.has(item.id)),
+      edges: value.edges.filter(edge => !nodes.has(edge.source) && !nodes.has(edge.target) && !edges.has(edgeKey(edge))),
+    }), true);
+    setSelected([]);
+    setSelectedEdges([]);
+    setInspectorOpen(false);
+  };
+  const duplicate = () => {
+    const current = latest.current;
+    if (!current || !node || !canEdit() || nodeDraftDirty) return;
+    if (isEntryType(node.type, definition)) { setGraphError('消息触发或兼容入口不能直接复制，请从节点库选择另一种触发类型'); return; }
+    if (current.nodes.length >= (registry?.limits.max_nodes || 64)) { setGraphError('已达到节点数量上限'); return; }
+    const copy = clone(node);
+    copy.id = node.type + '_' + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+    const position = positionOf(node, current.nodes.indexOf(node));
+    copy.ui = { ...copy.ui, position: availablePosition(current, { x: position.x + 45, y: position.y + 120 }), label: (copy.ui?.label || definition?.label || node.type) + ' 副本' };
+    mutate(value => ({ ...value, nodes: [...value.nodes, copy] }), true);
+    setSelected([copy.id]);
+    setSelectedEdges([]);
+    setInspectorOpen(false);
+  };
   const action = async (kind: 'save' | 'validate' | 'test' | 'publish', name?:string) => {
     if((kind==='save'||kind==='publish')&&readOnly){setError('当前资源为只读权限');return;}
     if(kind==='test'&&(!executeAllowed||readOnly)){setError('当前资源没有草稿执行授权');return;}
@@ -205,7 +314,7 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
     actionPending.current = true;
     const snapshot = clone(workflow);if(name!==undefined)snapshot.name=name.trim(); const token = serial.current; const epoch = accountEpoch();
     const current = () => alive.current && token === serial.current && epoch === accountEpoch();
-    setBusy(kind); setError(''); setNotice('');
+    setBusy(kind); setError(''); setGraphError(''); setGraphIssue(null); setNotice('');
     if (kind === 'test') { expectedTarget.current = null; setRunTab('results'); runStateVersion.current++; setRunWorkflow(snapshot); setTraces([]); setTraceError(''); setRun(null); setApprovals([]); setEvents([]); setRunError(''); setResultOpen(true); setResultNode(''); }
     try {
       if (kind === 'publish' && !canPublish) throw new Error('请先保存并确认智能体已关联此画布，再发布版本');
@@ -214,7 +323,7 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
       if (!current()) return;
       if (kind === 'save' || embedded && kind === 'publish') {
         const saved = await workflowApi.save(snapshot); if (!current()) return;
-        setWorkflow(saved); setBaseline(JSON.stringify(saved));
+        clearHistory(); setWorkflow(saved); setBaseline(JSON.stringify(saved));
         if (embedded) { if (!agentId || !saved.id) throw new Error('缺少智能体或画布标识'); if (linkedId !== saved.id) { await workflowApi.bind(agentId, saved.id); if (!current()) return; setLinkedId(saved.id); } }
         setNotice(embedded ? '画布已保存并关联此智能体' : '已保存到服务器');
         if (embedded && saved.id && saved.id !== workflowId) onWorkflowChange?.(saved.id);
@@ -228,7 +337,19 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
         if (current()) { setRun(created); setNotice('已提交本次草稿测试；使用点击时的画布快照'); }
       }
       return current();
-    } catch (e) { if (current()) { setError(messageOf(e)); if (kind === 'test') setRunError(messageOf(e)); } return false; }
+    } catch (e) {
+      if (current()) {
+        const message = messageOf(e);
+        const failure = e as { code?: string; details?: { errors?: { node_id?: string }[] } };
+        if (failure?.code === 'INVALID_WORKFLOW') {
+          const nodeId = failure.details?.errors?.[0]?.node_id;
+          if (nodeId && snapshot.nodes.some(item => item.id === nodeId)) setGraphIssue({ nodeId, message });
+          setGraphError(message);
+        } else setError(message);
+        if (kind === 'test') setRunError(message);
+      }
+      return false;
+    }
     finally { if (current()) { actionPending.current = false; setBusy(''); } }
   };
   const persistNodeConfiguration = async (next:WorkflowDefinition,change?:NodeSettingsChange):Promise<WorkflowDefinition> => {
@@ -245,7 +366,7 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
       if(!saved.id)throw Error('保存未返回工作流标识，请重新读取确认');
       setWorkflow(previous=>previous&&patchOnly&&change?mergeSavedNode(previous,saved,change):withWorkflowLayout(saved,previous||next));
       if(embedded&&agentId&&linkedId!==saved.id){await workflowApi.bind(agentId,saved.id);if(!current())throw Error('工作室已变化，请重新打开');setLinkedId(saved.id);}
-      setBaseline(JSON.stringify(saved));setNotice('节点配置已保存到服务器');onWorkflowChange?.(saved.id);return saved;
+      clearHistory();setGraphIssue(null);setGraphError('');setBaseline(JSON.stringify(saved));setNotice('节点配置已保存到服务器');onWorkflowChange?.(saved.id);return saved;
     } finally {if(current()){actionPending.current=false;setBusy('');}}
   };
   const saveWorkflow = async () => {
@@ -253,14 +374,30 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
     if (!saveName.trim()) { setError('请输入工作流名称'); return; }
     savePending.current = true; const token = serial.current; const epoch = accountEpoch();
     try {
-      if (await action('save', saveName) && alive.current && token === serial.current && epoch === accountEpoch()) {
-        setSaveOpen(false); setNotice('');
-        let dialog: { destroy: () => void } | undefined;
-        dialog = modalRef.current.success({ title: '工作流已保存', content: '可以继续编辑，或测试当前工作流。', centered: true, okText: '完成', getContainer: () => root.current || document.body, afterClose: () => { if (dialog) successDialogs.current.delete(dialog); } });
-        if (dialog) successDialogs.current.add(dialog);
-      }
-    } catch { if (alive.current && token === serial.current && epoch === accountEpoch()) setNotice('工作流已保存，暂时无法显示确认提示'); }
-    finally { if (alive.current && token === serial.current && epoch === accountEpoch()) savePending.current = false; }
+      if (await action('save', saveName) && alive.current && token === serial.current && epoch === accountEpoch()) setSaveOpen(false);
+    } finally { if (alive.current && token === serial.current && epoch === accountEpoch()) savePending.current = false; }
+  };
+  const graphBlock = nodeDraftDirty ? '请先保存节点配置或取消编辑' : hasInvalid ? '请先修正尚未完成的输入' : '';
+  const requestSave = () => {
+    if (!workflow || !canEdit() || saveOpen) return;
+    if (graphBlock) { setGraphError(graphBlock); return; }
+    setSaveName(workflow.name);
+    setSaveOpen(true);
+    setError('');
+    setGraphError('');
+  };
+  const graphShortcuts = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!workflow || event.defaultPrevented || event.altKey || !(event.ctrlKey || event.metaKey)) return;
+    const target = event.target as HTMLElement;
+    if (!event.currentTarget.contains(target) || target.closest('[role="dialog"]')) return;
+    const key = event.key.toLowerCase();
+    if (key === 's') {
+      event.preventDefault();
+      requestSave();
+    } else if ((key === 'z' || key === 'y') && !target.closest('input, textarea, select, [contenteditable]')) {
+      event.preventDefault();
+      changeHistory(key === 'y' || event.shiftKey ? 'redo' : 'undo');
+    }
   };
   const testNodeReason = nodeDraftDirty ? '请先保存节点配置或取消编辑，再测试当前节点' : !node ? '请先选择节点' : !registry ? '节点能力目录未连接' : definition?.status === 'unavailable' ? readinessReason(definition) : legacy ? '请先转换为 v2 副本再测试节点' : Object.entries(invalid).some(([key, value]) => value && key.endsWith(`-${node.id}`)) ? '请先修正当前节点配置' : (definition?.config_schema.required || []).some(key => node.config?.[key] === undefined || node.config?.[key] === '') ? '请先填写当前节点的必填配置' : (definition?.input_schema.required || []).some(key => node.inputs?.[key] === undefined || node.inputs?.[key]?.$ref === '') ? '请先填写当前节点的必填输入或变量引用' : '';
   const runSingleNode = async (inputs: ObjectValue, pools: TestVariables, checked: CheckedTestTarget) => {
@@ -371,20 +508,20 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
     void poll(); return () => { live = false; clearTimeout(timer); };
   }, [runId, runRefresh]);
   if (embedded && agent?.agent_type === 'simple') return <div className={styles.linkedEmpty}><p>简单智能体使用配置表单，无需编排画布。</p>{onBack && <button onClick={onBack}>返回智能体</button>}</div>;
-  return <div ref={root} className={`${styles.studio} ${workflow ? styles.editing : ''} ${embedded ? styles.embedded : ''} ${fullPage ? styles.fullPage : ''}`}>
+  return <div ref={root} tabIndex={-1} onKeyDown={graphShortcuts} className={`${styles.studio} ${workflow ? styles.editing : ''} ${embedded ? styles.embedded : ''} ${fullPage ? styles.fullPage : ''}`}>
     <ApprovalInbox open={approvalOpen} container={() => root.current || document.body} onClose={() => setApprovalOpen(false)} onDecided={id => { if (id === run?.id) { runStateVersion.current++; setRunRefresh(value => value + 1); } }} />
     {fileClient&&<WorkflowFileTools mode={fileMode} client={fileClient} onCreatingChange={value=>{fileCreating.current=value;}} workflow={workflow} savedWorkflow={baseline?JSON.parse(baseline):null} beforeCreate={canLeave} onClose={()=>setFileMode(null)} onCreated={async value=>{if(!value.id)throw Error('服务端尚未返回新工作流标识，请重试确认。');setFileMode(null);listRequest.current++;setItems(items=>[value,...items.filter(item=>item.id!==value.id)]);if(onWorkflowImported){if(!embedded)open(value);await onWorkflowImported(value);}else if(!embedded){open(value);onWorkflowChange?.(value.id);await refreshList();}else throw Error('无法打开独立草稿，请返回AI工作室查看。');}}/>}
     {!workflow ? !embedded&&(workflowId||createOnOpen)?<LinkedWorkflow unavailable={!linkedLoading} loading={linkedLoading} busy={Boolean(busy)} error={error} agentName="工作流" onBack={onBack} onRetry={()=>{setLinkedAttempt(n=>n+1);if(initialMessageKind){setRegistryError('');void refreshRegistry();}}} items={[]} value="" onChange={()=>{}} onCreate={()=>{}} onBind={()=>{}} onCopy={()=>{}}/>:embedded ? <LinkedWorkflow unavailable={!loading && !linkedLoading && (!agent || Boolean(linkedId))} onRetry={() => setLinkedAttempt(value => value + 1)} onBack={onBack ? () => leaveTo(onBack) : undefined} agentName={agentName || agent?.name || "智能体编排"} loading={loading || linkedLoading} busy={Boolean(busy)} error={error} items={items} value={bindSelection} onChange={setBindSelection} onCreate={() => { if (!registry) { setError("能力目录尚未连接"); return; } let next; try { next = newAgentWorkflow(registry); } catch (e) { setError(messageOf(e)); return; } next.name = `${agentName || agent?.name || "智能体"} · 工作流`; open(next, false, true); }} onBind={() => attachExisting(false)} onCopy={() => attachExisting(true)} /> : <><header className={styles.listHeader}><div><span className={styles.eyebrow}>可视化编排</span><h1>工作流工作室</h1><p>把消息、知识与处理步骤连接成可追溯的流程。</p></div><button onClick={() => setApprovalOpen(true)}>我的审批</button>{fileClient&&<button onClick={()=>setFileMode('import')} disabled={loading||Boolean(busy)}>导入工作流</button>}<button className={styles.primary} onClick={() => open(newWorkflow(), false, true)} disabled={loading || Boolean(busy)}>＋ 新建工作流</button><MessageWorkflowCreate registry={registry} disabled={loading || Boolean(busy)} onCreate={value=>open(value,false,true)}/></header><div className={styles.listToolbar}><input aria-label="搜索工作流" placeholder="搜索工作流名称" value={listSearch} onChange={e => setListSearch(e.target.value)} /><button onClick={() => { setLoading(true); refreshList().catch(e => setError(messageOf(e))).finally(() => setLoading(false)); }}>刷新列表</button><span>{items.length} 个流程</span></div>{error && <div role="alert" className={styles.alert}>{error}</div>}{registryError && <div className={styles.warning}>实时节点注册表尚未就绪：{registryError} <button onClick={refreshRegistry}>重试注册表</button></div>}<div className={styles.workflowGrid}>{items.filter(w => w.name.toLowerCase().includes(listSearch.toLowerCase())).map(w => <button key={w.id} className={styles.workflowCard} onClick={async () => { if (!w.id) return; setBusy('open'); try { open(await workflowApi.get(w.id)); } catch (e) { setError(messageOf(e)); } finally { setBusy(''); } }} disabled={w.access?.read===false||Boolean(busy)} title={w.access?.read===false?'没有读取权限':undefined}><span className={styles.cardIcon}>⑂</span><strong>{w.name}</strong><span>{isLegacy(w) ? 'v1 兼容流程' : 'v2 可视化流程'}</span><small>{w.metadata_only?'仅目录可见':`${w.nodes?.length||0} 节点 · ${w.edges?.length||0} 连线`}</small><span className={styles.cardLink}>打开画布 ↗</span></button>)}{!loading && !items.length && <div className={styles.empty}>还没有工作流。新建后添加节点、连接变量，再进行真实测试。</div>}{loading && <div className={styles.empty}>正在读取服务器流程…</div>}</div></>
-      : <><header className={styles.toolbar}>{onBack && <button aria-label={`返回${menuLabels.agents}`} disabled={Boolean(busy)} onClick={() => leaveTo(onBack)}>← 返回</button>}{!embedded&&!(onBack&&(createOnOpen||workflowId)) && <button title="返回流程列表" aria-label="返回流程列表" disabled={Boolean(busy)} onClick={() => leaveTo(() => open(null))}>←</button>}<div className={styles.workflowTitle}>{embedded && <strong className={styles.agentTitle}>工作流</strong>}<input aria-label="工作流名称" value={workflow.name} disabled={readOnly||Boolean(busy)} onChange={e => mutate(w => ({ ...w, name: e.target.value }))} /><small aria-live="polite">{busy ? '正在处理…' : !workflow.id ? '未保存草稿' :readOnly?'只读权限': dirty ? '有未保存更改' : '已保存'}{legacy ? ' · 兼容流程' : ''}{embedded && ` · ${linkedId ? '已关联工作流' : '尚未保存'} · ${versionLabel ? `已发布 v${versionLabel}` : '草稿'}`}</small></div><div className={styles.toolbarActions}>{onOpenApplicationApi && <button disabled={!applicationAssetId || Boolean(busy) || uploading || saveOpen} title={!applicationAssetId ? embedded ? "请先保存智能体，再打开 API 接入" : "请先保存工作流，再打开 API 接入" : "打开 API 接入，管理发布版本与调用凭据"} onClick={openApplicationApi}>API调用</button>}<button onClick={() => setApprovalOpen(true)}>我的审批</button>{fileClient&&<><button disabled={Boolean(busy)} onClick={()=>setFileMode('import')}>导入</button><button disabled={Boolean(busy)||hasInvalid} onClick={()=>setFileMode('export')}>导出</button></>}<button onClick={async () => { try { if (document.fullscreenElement && typeof document.exitFullscreen === 'function') await document.exitFullscreen(); else if (typeof root.current?.requestFullscreen === 'function') await root.current.requestFullscreen(); else setError('当前浏览器不支持全屏，请使用工作流独立页面'); } catch (error) { setError(messageOf(error)); } }} title="全屏工作室">{fullScreen ? '退出全屏' : '全屏'}</button><button disabled={Boolean(busy) || hasInvalid || nodeDraftDirty} onClick={() => action('validate')}>校验</button><button disabled={readOnly||Boolean(busy) || hasInvalid || nodeDraftDirty} onClick={() => {setSaveName(workflow.name);setSaveOpen(true);setError('');}}>保存</button><button className={styles.primary} disabled={readOnly||!executeAllowed||Boolean(busy) || uploading || hasInvalid || nodeDraftDirty || isPendingRun(run) || (!legacy && !registry)} onClick={() => { setResultOpen(true); setRunTab('inputs'); }}>{"▷ 试运行"}</button><button disabled={readOnly||(embedded?!canPublish:!onOpenApplicationApi||!applicationAssetId)||Boolean(busy) || hasInvalid || nodeDraftDirty} title={embedded ? "发布当前配置与工作流快照" : "配置已发布 API 版本"} onClick={() => embedded?action("publish"):openApplicationApi()}>{embedded ? "发布工作流" : "发布 API"}</button></div></header>
-      <Modal title="保存工作流" open={saveOpen} centered okText="确认保存" cancelText="取消" confirmLoading={busy === 'save'} getContainer={() => root.current || document.body} destroyOnHidden maskClosable={!busy} keyboard={!busy} closable={!busy} cancelButtonProps={{ disabled: Boolean(busy) }} okButtonProps={{ disabled: Boolean(busy) || !saveName.trim() }} onCancel={() => { if (!busy && !savePending.current) setSaveOpen(false); }} onOk={saveWorkflow}><label>工作流名称<Input aria-label="保存工作流名称" value={saveName} maxLength={100} onChange={e=>setSaveName(e.target.value)}/></label><p className={styles.hint}>{embedded?'保存当前工作流的节点、连线与配置。':'保存当前节点、连线与配置。'}</p>{error&&<p role="alert" className={styles.errorText}>{error}</p>}</Modal>
-      {(error || notice || registryError || legacy || resourcesLoading) && <div className={styles.banners}>{resourcesLoading&&<div className={styles.loadingResources} role="status">画布已打开，资源目录正在加载；可继续编辑节点。</div>}{error && <div className={styles.alert} role="alert">{error}</div>}{notice && <div className={styles.notice} role="status">{notice}</div>}{registryError && <div className={styles.warning}>注册表未连接，v2执行不可用：{registryError} <button onClick={refreshRegistry}>重试</button></div>}{legacy && <div className={styles.warning}>旧版流程保留原始配置和执行方式。<button disabled={!registry || Boolean(busy)} onClick={() => leaveTo(() => { if (registry) open(convertLegacy(workflow, registry), false); })}>转换为v2副本</button></div>}</div>}
-      <CanvasWorkspace inspectorOpen={inspectorOpen} onInspectorOpenChange={open=>{setInspectorOpen(open);if(!open)setSelected([]);}} library={<NodeLibrary catalog={catalog} connected={Boolean(registry)} count={workflow.nodes.length} legacy={legacy} busy={Boolean(busy)} search={search} onSearch={setSearch} onRefresh={() => { refreshRegistry(); refreshVariables(); refreshResources().catch(e => setError(messageOf(e))); }} onAdd={add} />} inspector={<aside className={styles.inspector}><div className={styles.tabs}>{(['node', 'workflow'] as const).map(t => <button key={t} className={tab === t ? styles.activeTab : ''} onClick={() => showInspector(t)}>{({ node: '节点属性', workflow: '流程与变量', test: '测试输入' })[t]}</button>)}</div><fieldset disabled={Boolean(busy)} className={styles.inspectorBody} tabIndex={0} aria-label="属性与测试内容">
+      : <><header className={styles.toolbar}>{onBack && <button aria-label={`返回${menuLabels.agents}`} disabled={Boolean(busy)} onClick={() => leaveTo(onBack)}>← 返回</button>}{!embedded&&!(onBack&&(createOnOpen||workflowId)) && <button title="返回流程列表" aria-label="返回流程列表" disabled={Boolean(busy)} onClick={() => leaveTo(() => open(null))}>←</button>}<div className={styles.workflowTitle}>{embedded && <strong className={styles.agentTitle}>工作流</strong>}<input aria-label="工作流名称" value={workflow.name} disabled={readOnly||Boolean(busy)} onChange={e => mutate(w => ({ ...w, name: e.target.value }))} /><small aria-live="polite">{busy ? '正在处理…' : !workflow.id ? '未保存草稿' :readOnly?'只读权限': dirty ? '有未保存更改' : '已保存'}{legacy ? ' · 兼容流程' : ''}{embedded && ` · ${linkedId ? '已关联工作流' : '尚未保存'} · ${versionLabel ? `已发布 v${versionLabel}` : '草稿'}`}</small></div><div className={styles.toolbarActions}>{onOpenApplicationApi && <button disabled={!applicationAssetId || Boolean(busy) || uploading || saveOpen} title={!applicationAssetId ? embedded ? "请先保存智能体，再打开 API 接入" : "请先保存工作流，再打开 API 接入" : "打开 API 接入，管理发布版本与调用凭据"} onClick={openApplicationApi}>API调用</button>}<button onClick={() => setApprovalOpen(true)}>我的审批</button>{fileClient&&<><button disabled={Boolean(busy)} onClick={()=>setFileMode('import')}>导入</button><button disabled={Boolean(busy)||hasInvalid} onClick={()=>setFileMode('export')}>导出</button></>}<button onClick={async () => { try { if (document.fullscreenElement && typeof document.exitFullscreen === 'function') await document.exitFullscreen(); else if (typeof root.current?.requestFullscreen === 'function') await root.current.requestFullscreen(); else setError('当前浏览器不支持全屏，请使用工作流独立页面'); } catch (error) { setError(messageOf(error)); } }} title="全屏工作室">{fullScreen ? '退出全屏' : '全屏'}</button><button disabled={Boolean(busy) || hasInvalid || nodeDraftDirty} title={graphBlock || undefined} onClick={() => action('validate')}>校验</button><button disabled={readOnly||Boolean(busy) || hasInvalid || nodeDraftDirty} title={graphBlock || '保存工作流（Ctrl / ⌘ + S）'} onClick={requestSave}>保存</button><button className={styles.primary} disabled={readOnly||!executeAllowed||Boolean(busy) || uploading || hasInvalid || nodeDraftDirty || isPendingRun(run) || (!legacy && !registry)} title={graphBlock || undefined} onClick={() => { setResultOpen(true); setRunTab('inputs'); }}>{"▷ 试运行"}</button><button disabled={readOnly||(embedded?!canPublish:!onOpenApplicationApi||!applicationAssetId)||Boolean(busy) || hasInvalid || nodeDraftDirty} title={embedded ? "发布当前配置与工作流快照" : "配置已发布 API 版本"} onClick={() => embedded?action("publish"):openApplicationApi()}>{embedded ? "发布工作流" : "发布 API"}</button></div></header>
+      <Modal title="保存工作流" open={saveOpen} centered okText="确认保存" cancelText="取消" confirmLoading={busy === 'save'} getContainer={() => root.current || document.body} destroyOnHidden maskClosable={!busy} keyboard={!busy} closable={!busy} cancelButtonProps={{ disabled: Boolean(busy) }} okButtonProps={{ disabled: Boolean(busy) || !saveName.trim() }} onCancel={() => { if (!busy && !savePending.current) setSaveOpen(false); }} onOk={saveWorkflow}><label>工作流名称<Input aria-label="保存工作流名称" value={saveName} maxLength={100} onChange={e=>setSaveName(e.target.value)}/></label><p className={styles.hint}>{embedded?'保存当前工作流的节点、连线与配置。':'保存当前节点、连线与配置。'}</p>{(error||graphError)&&<p role="alert" className={styles.errorText}>{error||graphError}</p>}</Modal>
+      {(error || graphError || notice || registryError || legacy || resourcesLoading) && <div className={styles.banners}>{resourcesLoading&&<div className={styles.loadingResources} role="status">画布已打开，资源目录正在加载；可继续编辑节点。</div>}{error && <div className={styles.alert} role="alert">{error}</div>}{graphError && <div className={styles.alert} role="alert">{graphError} {graphIssue && <button onClick={() => { setSelected([graphIssue.nodeId]); showInspector('node'); void fitView({ nodes: [{ id: graphIssue.nodeId }], padding: .3, maxZoom: 1, duration: 180 }); }}>定位节点</button>}</div>}{notice && <div className={styles.notice} role="status">{notice}</div>}{registryError && <div className={styles.warning}>注册表未连接，v2执行不可用：{registryError} <button onClick={refreshRegistry}>重试</button></div>}{legacy && <div className={styles.warning}>旧版流程保留原始配置和执行方式。<button disabled={!registry || Boolean(busy)} onClick={() => leaveTo(() => { if (registry) open(convertLegacy(workflow, registry), false); })}>转换为v2副本</button></div>}</div>}
+      <CanvasWorkspace inspectorOpen={inspectorOpen} onInspectorOpenChange={open=>{if(!open&&nodeDraftDirty)return;setInspectorOpen(open);}} library={<NodeLibrary catalog={catalog} connected={Boolean(registry)} count={workflow.nodes.length} legacy={legacy} busy={Boolean(busy)||nodeDraftDirty} search={search} onSearch={setSearch} onRefresh={() => { refreshRegistry(); refreshVariables(); refreshResources().catch(e => setError(messageOf(e))); }} onAdd={add} />} inspector={<aside className={styles.inspector}><div className={styles.tabs}>{(['node', 'workflow'] as const).map(t => <button key={t} className={tab === t ? styles.activeTab : ''} disabled={nodeDraftDirty && t !== tab} onClick={() => showInspector(t)}>{({ node: '节点属性', workflow: '流程与变量', test: '测试输入' })[t]}</button>)}</div><fieldset disabled={Boolean(busy)} className={styles.inspectorBody} tabIndex={0} aria-label="属性与测试内容">
           {tab === 'node' && (node ? <div key={node.id}><h2>{node.ui?.label || definition?.label || "节点属性"}</h2><details className={styles.details}><summary>节点技术标识</summary><code>{node.id} · {node.type}</code></details><details className={styles.details}><summary>节点测试与能力</summary><div className={styles.readiness} data-state={definition?.status}>{node.type==='llm'&&definition?.status==='needs_configuration'?<>模型以可用目录为准，配置仍需校验与实际运行。{canManageModels&&onNavigate&&<small><button type="button" className={styles.linkButton} onClick={()=>navigatePage('models')}>模型管理 ↗</button></small>}</>:<>{stateLabels[definition?.status || 'unavailable']}{definition?.reason && <small>{readinessReason(definition)}</small>}</>}</div><button disabled={readOnly||!executeAllowed||Boolean(testNodeReason) || Boolean(busy) || isPendingRun(run)} title={testNodeReason || '仅测试当前节点'} onClick={() => { setTestScopePath([]); setTestNode(clone(node)); }}>▷ 测试此节点</button>{testNodeReason && <p className={styles.hint}>{testNodeReason}</p>}</details><fieldset disabled={readOnly} style={{border:0,padding:0}}><NodeDraftPanel currentMessage={message} saveScopeNote={!workflow.id?"首次保存会创建工作流，包含当前画布结构与本节点配置。":!JSON.parse(baseline||'{"nodes":[]}').nodes?.some((item:WorkflowNode)=>item.id===node.id)?"这是新增节点：保存会同时提交当前已添加的节点与连线，不包含其他面板未提交草稿。":"保存本节点与当前画布连线，其它节点的配置保持不变。"} key={`${session}:${node.id}`} node={node} workflow={workflow} registry={catalog} resources={resources} variables={variables} onCommit={async(next,change)=>{await persistNodeConfiguration(next,change);}} onCancel={()=>{setSelected([]);setInspectorOpen(false);}} onDirtyChange={setNodeDraftDirty} knowledgeScope={agent?.knowledge_resources} dataScope={agent?.data_resources} canManageModels={canManageModels} onManageModels={onNavigate?()=>navigatePage('models'):undefined}/></fieldset><details className={styles.details}><summary>可引用变量 · {variables.length}</summary>{variableError && <p role="status" className={styles.hint}>{variableError}</p>}<p className={styles.hint}>业务输入、全局变量、已连接的上游输出及只读系统/当前用户变量。账号与角色不能修改，授权以后台为准。</p>{variables.map(v => <button className={styles.variable} key={v.ref} title="复制显式引用" onClick={() => { navigator.clipboard?.writeText(JSON.stringify({ $ref: v.ref })).then(() => setNotice('变量引用已复制')).catch(e => setError(messageOf(e))); }}><span>{v.label}</span><small>{typeLabel(v.type)} ⧉</small></button>)}</details><details className={styles.details}><summary>输出类型与端口</summary><pre>{JSON.stringify(definition?.output_schema || {}, null, 2)}</pre><small>输出端口：{outputPorts(node, definition).join(' / ') || '终端节点'}</small></details>{['iteration', 'loop'].includes(node.type) && <><button disabled={readOnly||!registry || nodeDraftDirty} onClick={() => setSubflowId(node.id)}>编辑可视子流程 ↗</button><p className={styles.hint}>子流程可拖节点、连线和填写表单。迭代可引用当前项/序号，循环可引用当前状态/序号；外层连线仍禁止环路。</p></>}</div> : <div className={styles.empty}>选择一个节点查看配置与变量。</div>)}
           {tab === 'workflow' && <><h2>流程设置</h2><p className={styles.hint}>输入、变量和执行限制随流程保存在服务器。</p><h3>业务输入字段</h3><SchemaDefinition onValidity={valid('inputDefinition')} value={workflow.input_schema || { type: 'object' }} onChange={input_schema => mutate(w => ({ ...w, input_schema }))} /><UserVariables onChange={setCustomUserVariables}/><h3>流程全局变量</h3><SchemaDefinition onValidity={valid('variableDefinition')} label="全局变量" value={{ type: 'object', properties: workflow.variables || {} }} onChange={schema => {try{const next=redefineVariables(workflow,schema.properties||{});mutate(()=>next);}catch(e){setError(messageOf(e));}}} /><label className={styles.field}><span>并行执行上限</span><input type="number" min={1} max={4} value={workflow.limits?.max_concurrency ?? 4} onChange={e => { if (e.target.value) mutate(w => ({ ...w, limits: { ...w.limits, max_concurrency: Math.max(1, Math.min(4, Number(e.target.value))) } })); }} /></label><details className={styles.details}><summary>高级输入与变量结构</summary><JsonEditor label="流程输入结构" value={workflow.input_schema || { type: 'object' }} onChange={input_schema => mutate(w => ({ ...w, input_schema }))} onValidity={valid('schema')} /><JsonEditor label="流程变量声明" value={workflow.variables || {}} onChange={variables => mutate(w => ({ ...w, variables }))} onValidity={valid('variables')} /><JsonEditor label="执行限制" value={workflow.limits || {}} onChange={limits => mutate(w => ({ ...w, limits }))} onValidity={valid('limits')} /></details><details className={styles.details}><summary>完整流程 JSON（高级查看）</summary><pre>{JSON.stringify(workflow, null, 2)}</pre>{fileClient&&<button onClick={()=>setFileMode('export')}>选择格式并检查导出</button>}</details></>}
         </fieldset></aside>}>
 <main className={styles.canvasColumn}><div ref={canvas} className={styles.canvas} onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={e => { e.preventDefault(); const def = catalog.items.find(d => d.type === e.dataTransfer.getData('application/workflow-node')); if (def) add(def, screenToFlowPosition({ x: e.clientX, y: e.clientY })); }}>
-          <div className={styles.canvasTools}><button disabled={!node || Boolean(busy)} onClick={duplicate}>复制节点</button><button disabled={(!selected.length && !selectedEdges.length) || Boolean(busy)} onClick={removeSelected}>删除选中</button><button onClick={() => fitView(canvasFitOptions(canvas.current?.clientWidth || 0, canvas.current?.clientHeight || 0))}>适应视图</button><button onClick={() => showInspector("workflow")}>流程设置</button><button onClick={() => { setResultOpen(true); setRunTab('inputs'); }}>试运行输入</button><span>滚轮缩放 · Shift框选 · Delete删除</span></div>
-          <ReactFlow<FlowNode> key={session} nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} onNodesChange={nodesChange} onEdgesChange={edgesChange} onConnect={connect} nodesDraggable={!readOnly&&!busy} nodesConnectable={!readOnly&&!busy} deleteKeyCode={busy||readOnly ? null : ['Backspace', 'Delete']} onNodeClick={(_, n) => { setSelected([n.id]); showInspector('node'); if (run && !runScopePath.length && runWorkflow?.nodes.some(node => node.id === n.id)) { setResultNode(n.id); setResultOpen(true); } }} onPaneClick={() => { setSelected([]); if (tab === 'node') setInspectorOpen(false); }} minZoom={.15} maxZoom={2} defaultViewport={workflow.ui?.viewport || { x: 0, y: 0, zoom: 1 }} fitView fitViewOptions={{ padding: .2, maxZoom: 1 }} onMoveEnd={(event, viewport) => { if (event) mutate(w => ({ ...w, ui: { ...w.ui, viewport } })); }} attributionPosition="bottom-left"><CanvasViewport container={canvas} session={session} /><Background gap={24} color="color-mix(in srgb, var(--text-muted, #717d8e) 22%, transparent)" /><MiniMap pannable zoomable style={{ width: 130, height: 90 }} nodeColor="var(--node-control, #8895a8)" /><Controls showInteractive={false} /></ReactFlow>
+          <div className={styles.canvasTools}><button disabled={!canEdit() || nodeDraftDirty || !history.current.undo.length} onClick={() => changeHistory('undo')}>撤销</button><button disabled={!canEdit() || nodeDraftDirty || !history.current.redo.length} onClick={() => changeHistory('redo')}>重做</button><button disabled={!node || !canEdit() || nodeDraftDirty} onClick={duplicate}>复制节点</button><button disabled={(!selected.length && !selectedEdges.length) || !canEdit() || nodeDraftDirty} onClick={() => removeSelection(selected, selectedEdges)}>删除选中</button><button onClick={() => fitView(canvasFitOptions(canvas.current?.clientWidth || 0, canvas.current?.clientHeight || 0))}>适应视图</button><button onClick={() => showInspector("workflow")}>流程设置</button><button onClick={() => { setResultOpen(true); setRunTab('inputs'); }}>试运行输入</button><span>滚轮缩放 · Shift框选 · Delete删除</span></div>
+          <ReactFlow<FlowNode> key={session} nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} onNodesChange={nodesChange} onEdgesChange={edgesChange} onConnect={connect} nodesDraggable={canEdit()&&!nodeDraftDirty} nodesConnectable={canEdit()&&!nodeDraftDirty} deleteKeyCode={!canEdit()||nodeDraftDirty ? null : ['Backspace', 'Delete']} onBeforeDelete={async ({nodes, edges}) => { removeSelection(nodes.map(item => item.id), edges.map(item => item.id)); return false; }} onNodeDragStart={() => { dragStart.current = latest.current; }} onNodeDragStop={finishDrag} onSelectionDragStart={() => { dragStart.current = latest.current; }} onSelectionDragStop={finishDrag} onNodeClick={(_, n) => { if(nodeDraftDirty)return; setSelected([n.id]); showInspector('node'); if (run && !runScopePath.length && runWorkflow?.nodes.some(node => node.id === n.id)) { setResultNode(n.id); setResultOpen(true); } }} onPaneClick={() => { root.current?.focus?.({ preventScroll: true }); if(nodeDraftDirty)return; setSelected([]); if (tab === 'node') setInspectorOpen(false); }} minZoom={.15} maxZoom={2} defaultViewport={workflow.ui?.viewport || { x: 0, y: 0, zoom: 1 }} fitView fitViewOptions={{ padding: .2, maxZoom: 1 }} ariaLabelConfig={{ 'controls.ariaLabel': '画布视图控制', 'controls.zoomIn.ariaLabel': '放大', 'controls.zoomOut.ariaLabel': '缩小', 'controls.fitView.ariaLabel': '适应视图' }} attributionPosition="bottom-left"><CanvasViewport container={canvas} session={session} /><Background gap={24} color="color-mix(in srgb, var(--text-muted, #717d8e) 22%, transparent)" /><MiniMap pannable zoomable style={{ width: 130, height: 90 }} nodeColor="var(--node-control, #8895a8)" /><Controls showInteractive={false} /></ReactFlow>
         </div>
         <div className={styles.resultToggle}><button onClick={() => setResultOpen(value => !value)} aria-expanded={resultOpen}>{resultOpen ? '▾' : '▸'} 试运行 {run ? `· ${stateLabels[run.status] || '状态待同步'}` : '· 填写输入后开始'}</button>{run && progress && <small aria-label="节点执行进度">成功 {progress.succeeded}/{progress.total} · 跳过 {progress.skipped} · 失败 {progress.failed}</small>}{canRunAction(run, 'cancel') && <button disabled={Boolean(busy)} onClick={() => controlRun('cancel')}>取消运行</button>}{canRunAction(run, 'resume') && <button disabled={Boolean(busy)} onClick={() => controlRun('resume')}>继续运行</button>}</div>
         {resultOpen && <RunPanel><div className={styles.runTabs}><button aria-pressed={runTab === 'inputs'} onClick={() => setRunTab('inputs')}>试运行输入</button><button aria-pressed={runTab === 'results'} onClick={() => setRunTab('results')}>本次结果与节点进度</button>{run && <button disabled={Boolean(busy)} onClick={() => { runStateVersion.current++; setRunRefresh(value => value + 1); }}>刷新</button>}{onNavigate && <button onClick={() => navigatePage('runs')}>运行记录 ↗</button>}</div>
@@ -402,7 +539,7 @@ function Studio({ fileClient=workflowFileClient,onWorkflowImported,createOnOpen=
           </>}
         </RunPanel>}
       </main>
-      </CanvasWorkspace>{subflowId && registry && workflow.nodes.find(node => node.id === subflowId) && <SubflowEditor currentMessage={message} persistedWorkflow={JSON.parse(baseline)} graphSha256={workflow.graph_sha256} onPersistSettings={async change=>await persistNodeConfiguration(workflow,change)} onPersistNode={async (next,expected)=>await persistNodeConfiguration(workflow,{node:next,node_id:next.id,scope_path:[],expected_graph_sha256:expected})} open node={workflow.nodes.find(node => node.id === subflowId)!} parent={workflow} registry={registry} resources={resources} testBusy={Boolean(busy) || isPendingRun(run)} onTestNode={(node, path) => { setTestScopePath([...path]); setTestNode(clone(node)); }} onRepeatChange={patch => mutate(w => ({ ...w, nodes: w.nodes.map(node => node.id === subflowId ? { ...node, ...patch } : node) }))} onChange={body => mutate(w => ({ ...w, nodes: w.nodes.map(node => node.id === subflowId ? { ...node, config: { ...node.config, body } } : node) }))} onValidity={valid(`body-${subflowId}`)} onClose={() => {setSubflowId('');setSelected([]);setInspectorOpen(false);}} container={() => root.current || document.body} readonlyVariables={readonlyVariables} knowledgeScope={agent?.knowledge_resources} dataScope={agent?.data_resources} canManageModels={canManageModels} onManageModels={onNavigate ? () => navigatePage('models') : undefined} />}{testNode && <NodeTestDialog key={JSON.stringify([testScopePath, testNode.id])} node={testNode} workflow={workflow} scopePath={testScopePath} registry={registry} variables={[]} inputs={testInputs} resources={resources} busy={Boolean(busy)} container={() => root.current || document.body} onClose={() => setTestNode(null)} onTest={runSingleNode} />}</>}
+      </CanvasWorkspace>{subflowId && registry && workflow.nodes.find(node => node.id === subflowId) && <SubflowEditor currentMessage={message} persistedWorkflow={JSON.parse(baseline || JSON.stringify(workflow))} graphSha256={workflow.graph_sha256} onPersistSettings={async change=>await persistNodeConfiguration(workflow,change)} onPersistNode={async (next,expected)=>await persistNodeConfiguration(workflow,{node:next,node_id:next.id,scope_path:[],expected_graph_sha256:expected})} open node={workflow.nodes.find(node => node.id === subflowId)!} parent={workflow} registry={registry} resources={resources} testBusy={Boolean(busy) || isPendingRun(run)} onTestNode={(node, path) => { setTestScopePath([...path]); setTestNode(clone(node)); }} onRepeatChange={patch => mutate(w => ({ ...w, nodes: w.nodes.map(node => node.id === subflowId ? { ...node, ...patch } : node) }))} onChange={body => mutate(w => ({ ...w, nodes: w.nodes.map(node => node.id === subflowId ? { ...node, config: { ...node.config, body } } : node) }))} onValidity={valid(`body-${subflowId}`)} onClose={() => {setSubflowId('');setSelected([]);setInspectorOpen(false);}} container={() => root.current || document.body} readonlyVariables={readonlyVariables} knowledgeScope={agent?.knowledge_resources} dataScope={agent?.data_resources} canManageModels={canManageModels} onManageModels={onNavigate ? () => navigatePage('models') : undefined} />}{testNode && <NodeTestDialog key={JSON.stringify([testScopePath, testNode.id])} node={testNode} workflow={workflow} scopePath={testScopePath} registry={registry} variables={[]} inputs={testInputs} resources={resources} busy={Boolean(busy)} container={() => root.current || document.body} onClose={() => setTestNode(null)} onTest={runSingleNode} />}</>}
   </div>;
 }
 export function WorkflowStudio(props: WorkflowStudioProps) { if (props.agentType === "simple") return <p>简单智能体使用配置表单，无需编排画布。</p>; return <ReactFlowProvider key={`${props.identityKey || 'legacy'}:${props.agentId || 'standalone'}`}><Studio {...props} /></ReactFlowProvider>; }

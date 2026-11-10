@@ -11,6 +11,10 @@ from .slicing_engine import RecipeReplay, prepare_request
 def is_portable(plan): return plan.get('recipe_version') == RECIPE
 
 
+def minimum_model_calls(source_groups):
+    return len(source_groups) * 4 + 4
+
+
 def slot_ids(plan): return ['slot_' + str(i) for i in range(plan['budget']['max_model_calls'])]
 
 
@@ -193,7 +197,7 @@ def prepare_document(*, document_id, snapshot, context, session, max_model_calls
         from app.agents.slicing_specialists import contexts
         plan.update(specialist_agent_id=specialist,source_group_contract='specialist-native-context-v1',
             source_context_groups=contexts(registry,groups,specialist))
-    if len(groups)*4+4>max_model_calls:fail('完整来源组、两次独立初审及知识/来源终审超出阶段调用预约，未丢弃尾部来源','SLICING_BUDGET_INVALID')
+    if minimum_model_calls(groups)>max_model_calls:fail('完整来源组、两次独立初审及知识/来源终审超出阶段调用预约，未丢弃尾部来源','SLICING_BUDGET_INVALID')
     # Check every initial full source group. Terminal requests are packed using
     # their actual complete records; they no longer reload all sources at once.
     for index,ids in enumerate(groups):

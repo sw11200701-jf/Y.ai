@@ -2,20 +2,12 @@
 // Graph drawing is stubbed; actual drag/connect/visual acceptance remains browser QA.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
-const ts = require('typescript');
 const React = require('react');
 const { create, act } = require('react-test-renderer');
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const web = path.resolve(__dirname, '../..');
-function compile(file, dependencies = {}, globals = {}) {
-  const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { fileName: file, compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
-  const module = { exports: {} };
-  vm.runInNewContext(code, { exports: module.exports, require: id => dependencies[id] || require(id), ...globals }, { filename: file });
-  return module.exports;
-}
+const compile = require('./test-module.cjs');
 const labels = compile(path.join(__dirname, 'labels.ts'));
 const uiLabels = compile(path.join(web, 'lib/ui-labels.ts'));
 const errors = compile(path.join(web, 'lib/errors.ts'));
@@ -60,7 +52,7 @@ async function harness(options = {}) {
     bind: async (agent, workflow) => { calls.push(['bind', agent, workflow]); if (options.bindError) throw options.bindError; mainWorkflow = workflow; return {}; },
     runAgent: async (agent, message, inputs) => { calls.push(['runAgent', agent, clone(message), inputs]); return { id: `run-${++seq}`, status: 'queued' }; },
   };
-  const globals = { window: { addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name); }, confirm: () => { nativeConfirms++; throw Error('window.confirm is forbidden for in-app navigation'); } }, document: { addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name); }, fullscreenElement: null }, crypto: require('node:crypto').webcrypto, ResizeObserver: class { constructor(callback) { this.callback = callback; observers.push(this); } observe() {} disconnect() {} }, setTimeout: fn => { timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id) };
+  const globals = { window: { addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name); }, confirm: () => { nativeConfirms++; return confirmResult; } }, document: { addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name); }, fullscreenElement: null }, crypto: require('node:crypto').webcrypto, ResizeObserver: class { constructor(callback) { this.callback = callback; observers.push(this); } observe() {} disconnect() {} }, setTimeout: fn => { timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id) };
   const flowApi = { screenToFlowPosition: p => p, fitView: options => calls.push(['fit', options]) };
   const flow = { ReactFlowProvider: children, ReactFlow: p => React.createElement('flow-surface', p, p.children), Background: () => null, Controls: () => null, MiniMap: () => null, useReactFlow: () => flowApi, useNodesInitialized: () => true };
   const canvasWorkspace = compile(path.join(web, 'components/workflow-studio/canvas-workspace.tsx'), { './studio.module.css': { __esModule: true, default: css } }, globals);
@@ -91,10 +83,10 @@ async function harness(options = {}) {
     './condition-editor': {ConditionEditor:p=>React.createElement('condition-editor',p)},
     './output-options': {OutputOptions:p=>React.createElement('output-options',p)},
     '../workflow-file-tools': p => React.createElement('workflow-file-tools',p), '@/lib/workflow-file-api':{workflowFileClient:{}},
-    'antd': { App: { useApp: () => ({ modal: modalApi }) }, Input: p => React.createElement('input', p), Modal: p => p.open ? React.createElement('section', { role: 'dialog', 'aria-label': p.title }, p.children, React.createElement('button', { onClick: p.onOk, disabled: p.okButtonProps?.disabled }, p.okText), React.createElement('button', { onClick: p.onCancel, disabled: p.cancelButtonProps?.disabled }, p.cancelText)) : null },
+    'antd': { Dropdown: children, Alert: children, Button: p => React.createElement('button',p,p.children), Select: p => React.createElement('model-select',p), Tag: children, App: { useApp: () => ({ modal: modalApi }) }, Input: p => React.createElement('input', p), Modal: p => p.open ? React.createElement('section', { role: 'dialog', 'aria-label': p.title }, p.children, React.createElement('button', { onClick: p.onOk, disabled: p.okButtonProps?.disabled }, p.okText), React.createElement('button', { onClick: p.onCancel, disabled: p.cancelButtonProps?.disabled }, p.cancelText)) : null },
     '@/lib/errors': errors, '@/lib/workflow/labels': labels, './canvas-workspace': canvasWorkspace, './canvas-viewport': canvasViewport, './knowledge-picker': knowledgePicker, './database-query': databaseQuery, './run-status': runStatus, './run-approvals': runApprovals,
     '../../../../contracts/node-registry.json': registry,
-    '@/lib/api': { defaultQuery: { entity: 'SYNTHETIC-DEMO', periods: ['2024', '2025'] } },
+    '@/lib/api': { request: async () => ({ items: [] }), currentIdentityEpoch: () => 1, defaultQuery: { entity: 'SYNTHETIC-DEMO', periods: ['2024', '2025'] } },
     '@/lib/workflow/api': { workflowApi: api, loadResources: async () => options.loadResources?options.loadResources():options.deferResources?new Promise(()=>{}):resources },
     '@/lib/workflow/adapter': adapter,
     '@/lib/workflow/run-events': runEvents,
@@ -107,7 +99,8 @@ async function harness(options = {}) {
     './message-composer': { __esModule: true, default: p => React.createElement('message-composer', p) },
     './schema-fields': schemaFields,
     './llm-editor': p => React.createElement('llm-editor',p),
-    './studio-node': { StudioNode: () => null },
+    './studio-node': { StudioNode: () => null, portLabel: (_node, port) => labels.enumLabel(port) },
+    '../model-picker': p => React.createElement('model-picker',p),
     './studio.module.css': { __esModule: true, default: css },
   }, globals).default;
   let tree;
@@ -160,6 +153,18 @@ test('unfinished JSON disables save, validation and test rather than saving prev
     assert.equal(h.calls.filter(c => c[0] === 'save').length, 0); assert(h.listeners.has('beforeunload'), 'unfinished editor text is unsaved work');
   } finally { await h.dispose(); }
 });
+test('an incomplete loop opens its visual subflow before node settings are saved', async () => {
+  const workflow = adapter.newWorkflow();
+  workflow.nodes.push({id:'repeat', type:'loop', inputs:{}, config:{}});
+  const h = await harness({props:{workflowId:'incomplete-loop'},workflow});
+  try {
+    const flow = h.tree.root.findByType('flow-surface');
+    await act(() => flow.props.onNodeClick({},flow.props.nodes.find(node => node.id === 'repeat')));
+    await h.click('编辑可视子流程 ↗');
+    assert.equal(h.tree.root.findByType('subflow-editor').props.node.id,'repeat');
+    assert.equal(h.calls.filter(call => call[0] === 'save').length,0);
+  } finally { await h.dispose(); }
+});
 test('simultaneous node/edge deletion preserves unrelated graph connections', async () => {
   const h = await harness();
   try {
@@ -172,13 +177,24 @@ test('simultaneous node/edge deletion preserves unrelated graph connections', as
     await addTemplate(); await addTemplate();
     const templates = flow().props.nodes.filter(n => n.data.node.type === 'template'); assert.equal(templates.length, 2);
     const [first, second] = templates; const originalEdge = flow().props.edges[0].id;
-    await act(async () => { flow().props.onEdgesChange([{ type: 'remove', id: originalEdge }]); await flush(); });
+    await act(async () => { await flow().props.onBeforeDelete({ nodes: [], edges: [{ id: originalEdge }] }); await flush(); });
     for (const [source, target] of [['start', first.id], [first.id, second.id], [second.id, 'answer']]) await act(async () => { flow().props.onConnect({ source, target, sourceHandle: 'default', targetHandle: 'default' }); await flush(); });
     assert.equal(flow().props.edges.length, 3);
     const deleted = flow().props.edges.filter(e => e.source === first.id || e.target === first.id).map(e => ({ type: 'remove', id: e.id }));
-    await act(async () => { const callbacks = flow().props; callbacks.onNodesChange([{ type: 'remove', id: first.id }]); callbacks.onEdgesChange(deleted); await flush(); });
+    await act(async () => { await flow().props.onBeforeDelete({ nodes: [first], edges: deleted }); await flush(); });
     assert.equal(flow().props.edges.length, 1); assert.equal(flow().props.edges[0].source, second.id); assert.equal(flow().props.edges[0].target, 'answer');
     assert(!flow().props.nodes.some(n => n.id === first.id));
+    await h.click('撤销');
+    assert.equal(flow().props.edges.length, 3);
+    assert(flow().props.nodes.some(n => n.id === first.id));
+    await h.click('重做');
+    assert(!flow().props.nodes.some(n => n.id === first.id));
+    assert.equal(flow().props.edges.length, 1);
+    const start = flow().props.nodes.find(n => n.id === 'start');
+    h.confirm(false);
+    await act(() => flow().props.onBeforeDelete({nodes:[start],edges:[]}));
+    assert(flow().props.nodes.some(n => n.id === 'start'));
+    assert.equal(h.nativeConfirms(),1);
   } finally { await h.dispose(); }
 });
 test('measured node dimensions survive editor mutations for minimap and fit-view bounds', async () => {
@@ -197,7 +213,7 @@ test('identity key change removes old editor and rejects a late run response', a
   finally { await h.dispose(); }
 });
 test('embedded draft tests use current graph and Agent scope without saving or rebinding', async () => {
-  const h = await harness({ embedded: true });
+  const h = await harness({ embedded: true, workflow: { ...adapter.newWorkflow(), ui: {} } });
   try {
     assert.equal(h.buttons('返回流程列表').length, 0);
     await h.click('测试输入');
@@ -236,8 +252,7 @@ test('panel resize preserves viewport and leaves graph clean; explicit fit remai
   const h = await harness({ embedded: true });
   try {
     await h.runTimers(); assert(h.calls.some(call => call[0] === 'fit'));
-    const surface = h.tree.root.findByType('flow-surface');
-    await act(async () => { surface.props.onMoveEnd(null, { x: 20, y: 30, zoom: .7 }); await flush(); });
+    assert.equal(h.tree.root.findByType('flow-surface').props.onMoveEnd, undefined);
     assert(h.content().includes('已保存')); assert(!h.listeners.has('beforeunload'));
     const before = h.calls.filter(call => call[0] === 'fit').length;
     await act(async () => { h.observers.forEach(observer => observer.callback()); await flush(); });
@@ -246,7 +261,7 @@ test('panel resize preserves viewport and leaves graph clean; explicit fit remai
     await h.click('展开节点库');
     const separator = h.tree.root.findAllByProps({ role: 'separator' }).find(node => node.props['aria-label'] === '调整节点库宽度');
     await act(async () => { separator.props.onKeyDown({ key: 'ArrowRight', preventDefault() {} }); await flush(); });
-    assert.equal(h.tree.root.findAllByProps({ role: 'separator' }).find(node => node.props['aria-label'] === '调整节点库宽度').props['aria-valuenow'], 342);
+    assert.equal(h.tree.root.findAllByProps({ role: 'separator' }).find(node => node.props['aria-label'] === '调整节点库宽度').props['aria-valuenow'], 272);
     assert(h.content().includes('已保存')); assert(!h.listeners.has('beforeunload'));
   } finally { await h.dispose(); }
 });
@@ -259,7 +274,7 @@ test('drag fit: selection resize cannot fit between pointer-down and final node 
     const original=clone(flow().props.nodes.map(n=>n.data.node));const target=flow().props.nodes[0];
     h.listeners.get('canvas:pointerdown')({pointerId:1});
     await act(async()=>{flow().props.onNodesChange([{type:'select',id:target.id,selected:true},{type:'position',id:target.id,dragging:true,position:{x:target.position.x+20,y:target.position.y+20}}]);await flush();});
-    assert.equal(h.buttons('收起属性区').length,1);await h.resize(900,720);await h.runTimers();assert.equal(fitCount(),before,'auto fit must not change transform during pointer gesture');
+    assert.equal(h.buttons('收起属性区').length,0);await h.resize(900,720);await h.runTimers();assert.equal(fitCount(),before,'auto fit must not change transform during pointer gesture');
     await act(async()=>{flow().props.onNodesChange([{type:'position',id:target.id,dragging:false,position:{x:target.position.x+40,y:target.position.y+40}}]);h.listeners.get('pointerup')({pointerId:1});await flush();});
     const positioned=clone(flow().props.nodes.map(n=>n.data.node));await h.runTimers();assert.equal(fitCount(),before);
     assert.deepEqual(clone(flow().props.nodes.map(n=>n.data.node)),positioned,'deferred fit only changes the view');
@@ -308,7 +323,7 @@ test('query node output renders actual rows without converting decimal strings a
   } finally { await h.dispose(); }
 });
 test('canvas save keeps product DSL node IDs ports references and UI metadata without an engine selector', async () => {
-  const workflow = clone(adapter.newWorkflow()); workflow.ui = { marker: 'preserve-layout-extension' }; workflow.nodes[0].ui.label = '消息入口';
+  const workflow = clone(adapter.newWorkflow()); workflow.ui = { marker: 'preserve-layout-extension' }; workflow.input_schema.properties.message = {type:'string'}; workflow.nodes[1].inputs = {text:{$ref:'inputs.message'}}; workflow.nodes[0].ui.label = '消息入口';
   const h = await harness({ embedded: true, workflow });
   try {
     await act(async () => { h.tree.root.findByType('flow-surface').props.onNodesChange([{ type: 'position', id: 'start', position: { x: 120, y: 210 } }]); await flush(); });
@@ -473,7 +488,7 @@ test('UI recheck: pointer resizing is cleaned up on unmount and does not dirty t
   try {
     const splitter = h.tree.root.findByProps({ 'aria-label': '调整节点库宽度' });
     await act(async () => { splitter.props.onPointerDown({ clientX: 100, preventDefault() {} }); h.listeners.get('pointermove')({ clientX: 145 }); await flush(); });
-    assert.equal(h.tree.root.findByProps({ 'aria-label': '调整节点库宽度' }).props['aria-valuenow'], 367); assert(!h.listeners.has('beforeunload'));
+    assert.equal(h.tree.root.findByProps({ 'aria-label': '调整节点库宽度' }).props['aria-valuenow'], 297); assert(!h.listeners.has('beforeunload'));
   } finally { await h.dispose(); }
   assert(!h.listeners.has('pointermove')); assert(!h.listeners.has('pointerup'));
 });
@@ -481,17 +496,21 @@ test('UI recheck: delayed leave dialog is singular and cancellation preserves se
   const h = await harness({ embedded: true, manualDialogs: true });
   try {
     const flow = h.tree.root.findByType('flow-surface'); await act(async () => { flow.props.onNodeClick({}, flow.props.nodes[1]); await flush(); });
-    const json = h.tree.root.findByProps({ 'aria-label': '输入 JSON' }); await act(async () => { json.props.onChange({ target: { value: '{"text":' } }); await flush(); });
+    const name = h.tree.root.findByProps({ 'aria-label': '节点草稿名称' }); await act(async () => { name.props.onChange({ target: { value: '未保存的节点名称' } }); await flush(); });
     let first; let second; await act(async () => { first = h.leaveGuard()(); second = h.leaveGuard()(); await flush(); });
     assert.equal(second, false); assert.equal(h.modalRecords.filter(record => record.kind === 'confirm').length, 1);
     await act(async () => { h.modalRecords.at(-1).config.onCancel(); await flush(); }); assert.equal(await first, false);
-    assert.equal(h.tree.root.findByProps({ 'aria-label': '输入 JSON' }).props.value, '{"text":'); assert.equal(h.tree.root.findByType('flow-surface').props.nodes.find(node => node.id === 'answer').selected, true);
+    assert.equal(h.tree.root.findByProps({ 'aria-label': '节点草稿名称' }).props.value, '未保存的节点名称'); assert.equal(h.tree.root.findByType('flow-surface').props.nodes.find(node => node.id === 'answer').selected, true);
     assert(h.listeners.has('beforeunload')); assert.equal(h.nativeConfirms(), 0);
   } finally { await h.dispose(); }
 });
+async function renameDraft(h) {
+  await act(() => h.tree.root.findByProps({'aria-label':'工作流名称'}).props.onChange({target:{value:'Synthetic unsaved draft'}}));
+}
 test('UI recheck: confirming a delayed dialog routes once even after repeated internal clicks', async () => {
   const h = await harness({ manualDialogs: true });
   try {
+    await renameDraft(h);
     let navigation; await act(async () => { navigation = h.buttons('返回AI工作室')[0].props.onClick(); void h.buttons('返回AI工作室')[0].props.onClick(); await flush(); });
     assert.equal(h.modalRecords.filter(record => record.kind === 'confirm').length, 1);
     await act(async () => { h.modalRecords.at(-1).config.onOk(); await flush(); }); await navigation;
@@ -499,7 +518,7 @@ test('UI recheck: confirming a delayed dialog routes once even after repeated in
   } finally { await h.dispose(); }
 });
 test('UI recheck: unmount resolves pending guard false and late dialog confirmation cannot navigate', async () => {
-  const h = await harness({ manualDialogs: true }); const pending = h.leaveGuard()(); const dialog = h.modalRecords.at(-1);
+  const h = await harness({ manualDialogs: true }); await renameDraft(h); const pending = h.leaveGuard()(); const dialog = h.modalRecords.at(-1);
   await h.dispose(); assert.equal(await pending, false); assert.equal(h.leaveGuard(), null); assert.equal(dialog.destroyed, true);
   dialog.config.onOk(); assert.equal(h.calls.filter(call => call[0] === 'back').length, 0);
 });
@@ -518,17 +537,16 @@ test('UI recheck: save failure preserves modal name graph draft and node selecti
     await h.click('保存'); await act(async () => { h.tree.root.findByProps({ 'aria-label': '保存工作流名称' }).props.onChange({ target: { value: '失败后保留此名称' } }); await flush(); });
     await h.click('确认保存'); assert.equal(h.tree.root.findByProps({ 'aria-label': '保存工作流名称' }).props.value, '失败后保留此名称'); assert(h.content().includes('服务暂不可用'));
     assert.equal(h.tree.root.findByType('flow-surface').props.nodes.find(node => node.id === 'answer').selected, true); assert.equal(h.modalRecords.filter(record => record.kind === 'success').length, 0);
-    options.saveError = undefined; await h.click('确认保存'); assert.equal(h.tree.root.findAllByProps({ 'aria-label': '保存工作流名称' }).length, 0); assert.equal(h.modalRecords.filter(record => record.kind === 'success').length, 1);
+    options.saveError = undefined; await h.click('确认保存'); assert.equal(h.tree.root.findAllByProps({ 'aria-label': '保存工作流名称' }).length, 0); assert.equal(h.modalRecords.filter(record => record.kind === 'success').length, 0); assert(h.content().includes('画布已保存'));
   } finally { await h.dispose(); }
 });
-test('UI recheck: repeated save clicks issue one save and success dialog is owned and cleaned up', async () => {
+test('UI recheck: repeated save clicks issue one save and show inline confirmation', async () => {
   const h = await harness({ embedded: true, deferSave: true });
   try {
     await h.click('保存'); await act(async () => { const save = h.buttons('确认保存')[0].props.onClick; void save(); void save(); await flush(); });
     assert.equal(h.saveRequests.length, 1); assert.equal(h.calls.filter(call => call[0] === 'save').length, 1); assert.equal(h.buttons('取消')[0].props.disabled, true);
-    await act(async () => { h.saveRequests[0].resolve(); await flush(); }); assert.equal(h.modalRecords.filter(record => record.kind === 'success').length, 1);
+    await act(async () => { h.saveRequests[0].resolve(); await flush(); }); assert.equal(h.modalRecords.filter(record => record.kind === 'success').length, 0); assert(h.content().includes('画布已保存'));
   } finally { await h.dispose(); }
-  assert.equal(h.modalRecords.find(record => record.kind === 'success').destroyed, true);
 });
 test('UI recheck: first bind failure keeps the saved graph and retries without posting a duplicate copy', async () => {
   const options = { embedded: true, unbound: true, bindError: new Error('关联失败，请重试') }; const h = await harness(options);
@@ -548,7 +566,7 @@ test('UI recheck: parent-owned navigation awaits the registered guard without op
   let h; const navigations = [];
   h = await harness({ manualDialogs: true, props: { parentGuardsNavigation: true, onNavigate: async page => { if (await h.leaveGuard()()) navigations.push(page); } } });
   try {
-    await h.click('▷ 测试运行'); let navigation; await act(async () => { navigation = h.buttons('运行记录 ↗')[0].props.onClick(); await flush(); });
+    await renameDraft(h); await h.click('▷ 测试运行'); let navigation; await act(async () => { navigation = h.buttons('运行记录 ↗')[0].props.onClick(); await flush(); });
     assert.equal(h.modalRecords.filter(record => record.kind === 'confirm').length, 1);
     await act(async () => { h.modalRecords.at(-1).config.onOk(); await flush(); }); await navigation; assert.deepEqual(navigations, ['runs']); assert.equal(h.modalRecords.filter(record => record.kind === 'confirm').length, 1);
   } finally { await h.dispose(); }
@@ -560,7 +578,7 @@ test('UI recheck: unsupported fullscreen reports Chinese feedback instead of a c
 });
 test('UI recheck: unavailable dialog service leaves the draft in place without a client exception', async () => {
   const h = await harness({ modalThrows: true });
-  try { await h.click('返回AI工作室'); assert(h.content().includes('暂时无法显示离开提示')); assert.equal(h.calls.filter(call => call[0] === 'back').length, 0); assert.equal(h.tree.root.findAllByType('flow-surface').length, 1); assert.equal(h.nativeConfirms(), 0); }
+  try { await renameDraft(h); await h.click('返回AI工作室'); assert(h.content().includes('暂时无法显示离开提示')); assert.equal(h.calls.filter(call => call[0] === 'back').length, 0); assert.equal(h.tree.root.findAllByType('flow-surface').length, 1); assert.equal(h.nativeConfirms(), 0); }
   finally { await h.dispose(); }
 });
 
@@ -575,8 +593,8 @@ for(const status of ['needs_configuration','unavailable'])test(`LLM inspector re
 });
 
 test('opening a canvas does not wait for unrelated resource catalogs and reuses the current authorized owner read',async()=>{
- const started=Date.now();const h=await harness({embedded:true,deferResources:true,props:{initialAgent:{id:'agent-a',name:'synthetic-agent',agent_type:'advanced',main_workflow_id:'linked-flow'}}});
- try{assert(h.tree.root.findByType('flow-surface'));assert(h.content().includes('资源目录正在加载'));assert.equal(h.calls.filter(c=>c[0]==='owner').length,0);assert.equal(h.calls.filter(c=>c[0]==='get').length,1);fs.writeFileSync(path.join(__dirname,'zhangpu-evidence/rebuild-20261026/loading-controlled.json'),JSON.stringify({controlled_mock:true,resource_catalog_promise:'still pending',canvas_rendered:true,owner_requests:0,workflow_get_requests:1,test_including_compilation_ms:Date.now()-started,not_real_browser_latency:true},null,2));}finally{await h.dispose();}
+ const h=await harness({embedded:true,deferResources:true,props:{initialAgent:{id:'agent-a',name:'synthetic-agent',agent_type:'advanced',main_workflow_id:'linked-flow'}}});
+ try{assert(h.tree.root.findByType('flow-surface'));assert(h.content().includes('资源目录正在加载'));assert.equal(h.calls.filter(c=>c[0]==='owner').length,0);assert.equal(h.calls.filter(c=>c[0]==='get').length,1);}finally{await h.dispose();}
 });
 
 test('new standalone workflow opens directly and executes without creating or binding an Agent',async()=>{
@@ -604,7 +622,7 @@ test('file import checks the real dirty guard before creation and opens a standa
 // 2026-10-26 draft/trace integration. Controlled API, never a real provider call.
 const draftIdentity={kind:'draft',graph_sha256:'1234567890abcdef',revision:'synthetic-revision'};
 test('draft debugging freezes current unsaved graph and preserves saved binding',async()=>{
- const h=await harness({embedded:true});try{
+ const h=await harness({embedded:true,workflow:{...adapter.newWorkflow(),ui:{}}});try{
  await act(()=>h.tree.root.findByProps({'aria-label':'工作流名称'}).props.onChange({target:{value:'unsaved synthetic graph'}}));await h.click('测试输入');await act(()=>h.tree.root.findByType('message-composer').props.onChange({type:'text',text:'synthetic draft',attachments:[]}));await h.click('保存并测试');
  const draft=h.calls.find(c=>c[0]==='debugRun')[1];assert.equal(draft.workflow.name,'unsaved synthetic graph');assert.equal(draft.agent_id,'agent-a');assert.equal(h.calls.filter(c=>['save','bind','runAgent'].includes(c[0])).length,0);
  await act(()=>h.tree.root.findByProps({'aria-label':'工作流名称'}).props.onChange({target:{value:'next edit'}}));assert.equal(draft.workflow.name,'unsaved synthetic graph');
@@ -620,9 +638,9 @@ test('success without final output is visibly incomplete instead of placeholder 
  const h=await harness();try{await h.click('▷ 测试运行');await h.complete('run-1',{id:'run-1',status:'succeeded',outputs:{},presentations:[{kind:'auto'}]});assert(h.content().includes('没有可交付结果'));}finally{await h.dispose();}
 });
 test('trace shows actual inputs outputs Chinese error and explicitly provided reasoning separately',async()=>{
- const trace={node_id:'answer',node_type:'llm',status:'failed',inputs:{prompt:'synthetic actual input'},outputs:{text:'synthetic answer'},error:{code:'SYNTHETIC_ERROR',message:'合成节点执行失败',request_id:'safe-request'},reasoning:{available:true,text:'公开摘要示例',kind:'provider_summary',source:'synthetic-provider'}};
- const h=await harness({traces:[trace]});try{await h.click('▷ 测试运行');await h.complete('run-1',{id:'run-1',status:'failed',execution_identity:draftIdentity,outputs:{}});await act(()=>h.tree.root.findByProps({'aria-label':'本次节点执行进度'}).findAllByType('button').find(button=>button.props['data-node-id']==='answer').props.onClick());assert(h.content().includes('synthetic actual input'));assert(h.content().includes('synthetic answer'));assert(h.content().includes('合成节点执行失败'));assert(h.content().includes('safe-request'));assert(h.content().includes('公开摘要示例'));assert(h.content().includes('synthetic-provider'));
- const reasoning=h.tree.root.findAllByType('details').find(item=>text(item).includes('供应商思考摘要'));assert.notEqual(reasoning.props.open,true);
+ const trace={node_id:'answer',node_type:'llm',status:'failed',inputs:{prompt:'synthetic actual input'},outputs:{text:'synthetic answer'},error:{code:'SYNTHETIC_ERROR',message:'合成节点执行失败',request_id:'safe-request'},reasoning:{available:true,text:'公开摘要示例',kind:'provider_summary',source:'provider.message.reasoning_summary'}};
+ const h=await harness({traces:[trace]});try{await h.click('▷ 测试运行');await h.complete('run-1',{id:'run-1',status:'failed',execution_identity:draftIdentity,outputs:{}});await act(()=>h.tree.root.findByProps({'aria-label':'本次节点执行进度'}).findAllByType('button').find(button=>button.props['data-node-id']==='answer').props.onClick());assert(h.content().includes('synthetic actual input'));assert(h.content().includes('synthetic answer'));assert(h.content().includes('合成节点执行失败'));assert(h.content().includes('safe-request'));assert(h.content().includes('公开摘要示例'));assert(h.content().includes('provider.message.reasoning_summary'));
+ const reasoning=h.tree.root.findAllByType('details').find(item=>text(item).includes('供应商摘要'));assert.notEqual(reasoning.props.open,true);
  }finally{await h.dispose();}
 });
 test('trace pagination follows cursor and rejects a page from another run',async()=>{

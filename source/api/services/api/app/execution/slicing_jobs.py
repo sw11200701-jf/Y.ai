@@ -40,8 +40,8 @@ class PortableSlicingCompiler:
                         parameters={'max_tokens': request['output_tokens']}, context_budget=plan['budget']['per_call_context_budget'],
                         response_format=fmt, context=execution.context, session=execution.session,document_policy=plan.get('model_invocation'))
                     execution.model_context_reservation={'context_tokens':plan['budget']['per_call_context_budget'],'image_tokens':0}
-                    from app.execution.document_job_budget import require_model_time
-                    require_model_time(pinned['plan'],execution.budget['deadline_epoch'])
+                    from app.execution.document_request_wait import prepare_document_address
+                    await prepare_document_address(pinned['plan'], execution, config=config)
 
                 async def operation(execution):
                     _, binding, current = authorize(execution.session, execution.run_id)

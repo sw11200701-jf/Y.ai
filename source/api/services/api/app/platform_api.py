@@ -301,10 +301,12 @@ def platform_context(session,token_id,workspace_id):
  from app.contracts import BusinessContext
  from app.settings import settings
  token,key,subject,permissions,old,current=current_scope(session,token_id,workspace_id)
+ from app.tool_egress import configured_tool_origins
+ allowed_origins = configured_tool_origins()
  return BusinessContext(tenant_id=subject.tenant_id,workspace_id=workspace_id,operator_id=key['id'],actor_id=subject.id,
   principal_type='platform',role='service',session_id=None,auth_key_id=token_id,role_id=subject.role_id,
   permissions=sorted(permissions),allowed_entities=json.loads(subject.allowed_entities),
-  allowed_origins=list(settings.tool_allowed_origins),allowed_tool_origins=list(settings.tool_allowed_origins))
+  allowed_origins=allowed_origins,allowed_tool_origins=allowed_origins)
 
 def validate_platform_context(context,session):
  if context.session_id is not None or not context.auth_key_id:raise AppError('PLATFORM_TOKEN_INVALID','平台身份无效',401)
@@ -418,5 +420,6 @@ def runtime_spaces(request:Request,session=Depends(get_session)):
 @runtime.get('/spaces/{workspace_id}/resources')
 def runtime_resources(workspace_id:str,request:Request,kind:str,session=Depends(get_session)):
  if kind not in DIRECTORY_KINDS:raise AppError('RESOURCE_KIND_DENIED','不支持此资源目录',403)
- token_id=request.state.platform_token_id;current_scope(session,token_id,workspace_id);token,key,user=token_state(session,token_id);rows=session.scalars(select(Resource).where(Resource.tenant_id==user.tenant_id,Resource.workspace_id==workspace_id,Resource.kind==kind))
+ from app.asset_archive import live_asset
+ token_id=request.state.platform_token_id;current_scope(session,token_id,workspace_id);token,key,user=token_state(session,token_id);rows=session.scalars(select(Resource).where(Resource.tenant_id==user.tenant_id,Resource.workspace_id==workspace_id,Resource.kind==kind,live_asset(kind)))
  return {'items':[metadata(row) for row in rows if allowed(session,token_id,workspace_id,row)]}

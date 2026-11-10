@@ -286,8 +286,8 @@ class SemanticCompiler:
                     from app.knowledge.semantic_document import validated_steps
                     data,_,_,_=validated_steps(pinned['plan'],read_step=reader,context=execution.context,session=execution.session,until=step_id)
                     preflight_semantic_model(pinned['plan'],step_id,data,context=execution.context,session=execution.session)
-                    from app.execution.document_job_budget import require_model_time
-                    require_model_time(pinned['plan'],execution.budget['deadline_epoch'])
+                    from app.execution.document_request_wait import prepare_document_address
+                    await prepare_document_address(pinned['plan'], execution)
                 async def operation(execution):
                     _,binding,current=authorize(execution.session,execution.run_id)
                     pinned=load_plan(execution.session,execution.context,current)
@@ -390,19 +390,18 @@ def completed_state_ref(session,context,run):
     return {'state_ref':row.result_ref}
 
 
-async def submit_document(*,scheduler,document_id,expected_revision,context,session,
-        max_model_calls=63,max_total_tokens=134217728,context_budget=None,output_tokens=None,job_timeout_seconds=None,
-        model_config_id=None,model_config_version=None,model_execution_mode=None,agent_id="builtin_knowledge_chunker"):
-    # Missing whole-draft capability refuses BEFORE extraction, reservation or cost.
-    require_finalizer()
-    from app.execution.builtin_agents import execution_snapshot
-    from app.knowledge.semantic_document import prepare_document
-    from app.contracts import RunCreate,WorkflowDefinition,FactQuery
-    check_finalizer(plan={'document_id':document_id},context=context,session=session)
+def _document_model_choice(model_config_id,model_config_version,model_execution_mode):
     choice=None
     if model_config_id is not None or model_config_version is not None or model_execution_mode is not None:
         if not model_config_id or not model_config_version:raise AppError('DOCUMENT_MODEL_CHOICE_INVALID','本次模型必须明确选择模型及其版本',422)
         choice={'model_config_id':model_config_id,'model_config_version':model_config_version,'model_execution_mode':model_execution_mode or 'model_default'}
+    return choice
+
+
+def _plan_document(*,document_id,expected_revision,context,session,max_model_calls,max_total_tokens,context_budget,
+                   output_tokens,job_timeout_seconds,choice,agent_id):
+    from app.execution.builtin_agents import execution_snapshot
+    from app.knowledge.semantic_document import prepare_document
     snapshot=execution_snapshot(session,context,document_model_choice=choice,agent_id=agent_id)
     if snapshot['profile_revision']!=expected_revision:
         raise AppError('BUILTIN_CONFIG_CONFLICT','切片配置已变，请刷新后提交',409)
@@ -412,54 +411,91 @@ async def submit_document(*,scheduler,document_id,expected_revision,context,sess
         if type(max_model_calls) is not int or not 2<=max_model_calls<=127 or type(max_total_tokens) is not int or max_total_tokens<1024:raise AppError('SLICING_BUDGET_INVALID','文档任务调用及总预算无效',422)
         context_budget=min(900000,configured.context_window,max_total_tokens//max_model_calls)
     if output_tokens is None:output_tokens=min(131072,configured.max_output_tokens)
+    from app.knowledge.service import entry as document_entry
+    direct_root=document_entry('knowledge_document',document_id,context,session,write=True)
+    from app.knowledge.service import raw_file as document_file
+    direct_kind=document_file(direct_root,context,session)['format']
+    from app.imports.document_container import RULE_FORMATS
+    layout_required=direct_kind not in RULE_FORMATS.values()
+    if direct_kind in ('docx','pdf','xlsx') and snapshot.get('recipe_version')!='portable-slicing-1.0.0':
+        from app.knowledge.semantic_document import _source
+        from app.knowledge.slicing_parser import parse_document,IMAGE_LAYOUT_V2
+        _,file,content=_source(document_id,context,session)
+        layout=parse_document(content,direct_kind,file_id=file['id'],version_sha256=file['sha256'],perform_ocr=False,image_layout_version=IMAGE_LAYOUT_V2)
+        layout_required=bool(layout['occurrences'] or layout['warnings']) or sum(len(source['text']) for source in layout['sources'].values())>8000 or direct_kind=='xlsx' and len(layout['sources'])>64
+        if not layout_required:
+            from app.imports.documents import _segments
+            lines=lambda texts:[line.strip() for text in texts for line in text.splitlines() if line.strip()]
+            # The short text protocol is eligible only when it retains the
+            # complete layout text. Headers, nested textboxes, revisions or
+            # other omitted objects must never disappear through fallback.
+            plain=lines(text for text,_ in _segments(content,direct_kind))
+            full=lines(source['text'] for source in layout['sources'].values())
+            layout_required=plain!=full or any(source['source_state']!='current' or source['metadata'].get('presentation_hidden') for source in layout['sources'].values())
+    if snapshot.get('recipe_version')=='portable-slicing-1.0.0' or layout_required:
+        from app.knowledge.slicing_document import prepare_document as prepare_portable
+        plan=prepare_portable(document_id=document_id,snapshot=snapshot,context=context,session=session,
+            max_model_calls=max_model_calls,max_total_tokens=max_total_tokens,context_budget=context_budget,output_tokens=output_tokens,current_document_scope=snapshot.get('recipe_version')!='portable-slicing-1.0.0' or agent_id!='builtin_knowledge_chunker')
+    else:
+        plan=prepare_document(document_id=document_id,model_config_id=snapshot['model_config_id'],
+            prompt_override=snapshot['prompt_override'],context=context,session=session,
+            max_model_calls=max_model_calls,max_total_tokens=max_total_tokens,
+            context_budget=context_budget,output_tokens=output_tokens,finalizer=_domain_finalizer,
+            model_execution_mode=snapshot.get('model_execution_mode','auto'))
+    plan['document_context_budget_contract']='signed-document-context-reservation-v1'
+    from app.execution.document_job_budget import reserve_time
+    from app.settings import settings
+    plan['model_network_policy']=model_network_snapshot(configured)
+    plan['time_budget']=reserve_time(model_calls=plan['budget']['max_model_calls'],provider_timeout_seconds=configured.timeout_seconds,
+        requested_seconds=job_timeout_seconds,server_ceiling_seconds=settings.document_job_timeout_max_seconds,resolver_allowance_seconds=plan['model_network_policy']['resolver_allowance_seconds'],request_timeout_seconds=settings.document_model_timeout_seconds)
+    plan['finalizer_contract_version']=FINALIZER_CONTRACT
+    return plan,snapshot
+
+
+def document_reservation(plan):
+    budget=plan['budget']
+    return {'model_calls':budget['max_model_calls'],'total_tokens':budget['reserved_total_tokens'],
+            'job_timeout_seconds':plan['time_budget']['wall_time_seconds']}
+
+
+def preview_document_budget(*,document_id,expected_revision,context,session,max_model_calls,max_total_tokens,
+        context_budget,output_tokens,job_timeout_seconds,model_config_id,model_config_version,model_execution_mode,agent_id):
+    require_finalizer()
+    check_finalizer(plan={'document_id':document_id},context=context,session=session)
+    plan,_=_plan_document(document_id=document_id,expected_revision=expected_revision,context=context,session=session,
+        max_model_calls=max_model_calls,max_total_tokens=max_total_tokens,context_budget=context_budget,output_tokens=output_tokens,
+        job_timeout_seconds=job_timeout_seconds,choice=_document_model_choice(model_config_id,model_config_version,model_execution_mode),
+        agent_id=agent_id)
+    from app.knowledge.slicing_document import minimum_model_calls
+    return {'reservation':document_reservation(plan),
+            'minimum_model_calls':minimum_model_calls(plan['source_groups']) if 'source_groups' in plan else None,
+            'mode':'preview_only'}
+
+
+async def submit_document(*,scheduler,document_id,expected_revision,context,session,
+        max_model_calls=63,max_total_tokens=134217728,context_budget=None,output_tokens=None,job_timeout_seconds=None,
+        model_config_id=None,model_config_version=None,model_execution_mode=None,agent_id="builtin_knowledge_chunker"):
+    # Missing whole-draft capability refuses BEFORE extraction, reservation or cost.
+    require_finalizer()
+    from app.contracts import RunCreate,WorkflowDefinition
+    check_finalizer(plan={'document_id':document_id},context=context,session=session)
+    choice=_document_model_choice(model_config_id,model_config_version,model_execution_mode)
     async with scheduler.admission_lock:
-        # Atomic with this scheduler's durable admission. A second click/tab or
-        # remount returns the existing job; it never reserves a second effect.
+        # A duplicate never reserves a second effect, including while the
+        # provider outcome of a previous request is still unknown.
         from app.execution.document_activity import active_document_job
         existing=active_document_job(session,context,document_id)
         if existing is not None:
+            if existing['status']=='outcome_unknown':
+                raise AppError('DOCUMENT_JOB_OUTCOME_UNKNOWN', '此文档已有模型调用待核查，本次未创建新任务', 409,
+                               {'job_id': existing['job_id'], 'run_id': existing['run_id']})
             if choice is not None or agent_id!="builtin_knowledge_chunker":
-                previous=load_plan(session,context,get_resource(session,'run',existing['run_id'],context),historical_metadata=existing['status']=='outcome_unknown')['builtin_snapshot']
+                previous=load_plan(session,context,get_resource(session,'run',existing['run_id'],context))['builtin_snapshot']
                 if previous.get('document_model_choice')!=choice or previous.get('agent_id')!=agent_id:raise AppError('DOCUMENT_MODEL_CHOICE_CONFLICT','此文档已有不同模型的活动或待核查任务；未新增调用或切换其模型',409)
             return existing
-        from app.knowledge.service import entry as document_entry
-        direct_root=document_entry('knowledge_document',document_id,context,session,write=True)
-        from app.knowledge.service import raw_file as document_file
-        direct_kind=document_file(direct_root,context,session)['format']
-        from app.imports.document_container import RULE_FORMATS
-        layout_required=direct_kind not in RULE_FORMATS.values()
-        if direct_kind in ('docx','pdf','xlsx') and snapshot.get('recipe_version')!='portable-slicing-1.0.0':
-            from app.knowledge.semantic_document import _source
-            from app.knowledge.slicing_parser import parse_document,IMAGE_LAYOUT_V2
-            _,file,content=_source(document_id,context,session)
-            layout=parse_document(content,direct_kind,file_id=file['id'],version_sha256=file['sha256'],perform_ocr=False,image_layout_version=IMAGE_LAYOUT_V2)
-            layout_required=bool(layout['occurrences'] or layout['warnings']) or sum(len(source['text']) for source in layout['sources'].values())>8000 or direct_kind=='xlsx' and len(layout['sources'])>64
-            if not layout_required:
-                from app.imports.documents import _segments
-                lines=lambda texts:[line.strip() for text in texts for line in text.splitlines() if line.strip()]
-                # The short text protocol is eligible only when it retains the
-                # complete layout text. Headers, nested textboxes, revisions or
-                # other omitted objects must never disappear through fallback.
-                plain=lines(text for text,_ in _segments(content,direct_kind))
-                full=lines(source['text'] for source in layout['sources'].values())
-                layout_required=plain!=full or any(source['source_state']!='current' or source['metadata'].get('presentation_hidden') for source in layout['sources'].values())
-        if snapshot.get('recipe_version')=='portable-slicing-1.0.0' or layout_required:
-            from app.knowledge.slicing_document import prepare_document as prepare_portable
-            plan=prepare_portable(document_id=document_id,snapshot=snapshot,context=context,session=session,
-                max_model_calls=max_model_calls,max_total_tokens=max_total_tokens,context_budget=context_budget,output_tokens=output_tokens,current_document_scope=snapshot.get('recipe_version')!='portable-slicing-1.0.0' or agent_id!='builtin_knowledge_chunker')
-        else:
-            plan=prepare_document(document_id=document_id,model_config_id=snapshot['model_config_id'],
-                prompt_override=snapshot['prompt_override'],context=context,session=session,
-                max_model_calls=max_model_calls,max_total_tokens=max_total_tokens,
-                context_budget=context_budget,output_tokens=output_tokens,finalizer=_domain_finalizer,
-                model_execution_mode=snapshot.get('model_execution_mode','auto'))
-        plan['document_context_budget_contract']='signed-document-context-reservation-v1'
-        from app.execution.document_job_budget import reserve_time
-        from app.settings import settings
-        plan['model_network_policy']=model_network_snapshot(configured)
-        plan['time_budget']=reserve_time(model_calls=plan['budget']['max_model_calls'],provider_timeout_seconds=configured.timeout_seconds,
-            requested_seconds=job_timeout_seconds,server_ceiling_seconds=settings.document_job_timeout_max_seconds,resolver_allowance_seconds=plan['model_network_policy']['resolver_allowance_seconds'],request_timeout_seconds=settings.document_model_timeout_seconds)
-        plan['finalizer_contract_version']=FINALIZER_CONTRACT
+        plan,snapshot=_plan_document(document_id=document_id,expected_revision=expected_revision,context=context,session=session,
+            max_model_calls=max_model_calls,max_total_tokens=max_total_tokens,context_budget=context_budget,output_tokens=output_tokens,
+            job_timeout_seconds=job_timeout_seconds,choice=choice,agent_id=agent_id)
         workflow=WorkflowDefinition(name='内置Agent文档处理',schemaVersion='2.0',
             variables={'semantic_plan_sha256':{'type':'string','default':digest(plan)}},
             limits={'max_steps':plan['budget']['max_model_calls']+1,'max_concurrency':1,'timeout_seconds':120},
@@ -470,6 +506,5 @@ async def submit_document(*,scheduler,document_id,expected_revision,context,sess
         request=RunCreate(workflow=workflow,prompt='执行内置文档处理任务',inputs={})
         run=await scheduler._submit(request,context,session,semantic_plan=plan,builtin_snapshot=snapshot)
         return {'job_id':plan['job_id'],'run_id':run['id'],'status':run['status'],
-            'reservation':{'model_calls':plan['budget']['max_model_calls'],'total_tokens':plan['budget']['reserved_total_tokens'],
-                           'job_timeout_seconds':plan['time_budget']['wall_time_seconds']},
+            'reservation':document_reservation(plan),
             'requires_publish':True,'manual_publish_required':True,'finalizer_contract_version':FINALIZER_CONTRACT}

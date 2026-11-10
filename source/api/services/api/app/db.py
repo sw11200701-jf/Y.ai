@@ -175,6 +175,10 @@ def save_resource(session: Session, kind: str, resource_id: str, payload: dict, 
         authorize_data_resource(session=session,context=context,kind=kind,resource_id=resource_id,action="maintain")
     elif row is not None and session.scalar(_resource_query(session,kind,resource_id,context,"write")) is None:
         raise AppError("NOT_FOUND","Resource not found",404)
+    from app.asset_archive import KINDS as ARCHIVABLE, live_asset
+    if row is not None and kind in ARCHIVABLE and session.scalar(
+            select(Resource.id).where(Resource.id == row.id, live_asset(kind))) is None:
+        raise AppError("NOT_FOUND","资源不存在或已移入回收站",404)
     if row is None and kind in DATA_KINDS:
         from app.data_models import DataResourceAlias
         if session.get(DataResourceAlias,(context.tenant_id,context.workspace_id,kind,resource_id)):
@@ -212,7 +216,7 @@ def save_resource(session: Session, kind: str, resource_id: str, payload: dict, 
         bind_resource(session,row,context)
     return payload
 
-def get_resource(session: Session, kind: str, resource_id: str, context: BusinessContext, access="read"):
+def get_resource(session: Session, kind: str, resource_id: str, context: BusinessContext, access="read", *, include_archived=False):
     from app.auth import validate_context
     validate_context(context,session)
     if not isinstance(resource_id,str) or not resource_id or len(resource_id)>160:
@@ -221,7 +225,11 @@ def get_resource(session: Session, kind: str, resource_id: str, context: Busines
     if kind in DATA_KINDS:
         decision=authorize_data_resource(session=session,context=context,kind=kind,resource_id=resource_id,action="maintain" if access=="write" else "use")
         return json.loads(decision.resource.payload)
-    row = session.scalar(_resource_query(session,kind, resource_id, context,access))
+    from app.asset_archive import live_asset
+    query = _resource_query(session,kind, resource_id, context,access)
+    if not include_archived or access != "read":
+        query = query.where(live_asset(kind))
+    row = session.scalar(query)
     if row is None:
         raise AppError("NOT_FOUND", f"{kind} {resource_id} not found", 404)
     if getattr(context,'principal_type','human')=='platform':
@@ -254,7 +262,8 @@ def list_resources(session: Session, kind: str, context: BusinessContext):
             result.append(json.loads(row.payload))
         return result
     result=[]
-    for row in session.scalars(_resource_query(session,kind, None, context).order_by(Resource.id.desc())):
+    from app.asset_archive import live_asset
+    for row in session.scalars(_resource_query(session,kind, None, context).where(live_asset(kind)).order_by(Resource.id.desc())):
         if getattr(context,"principal_type","human")=="service":
             from app.machine_auth import resource_granted
             if not resource_granted(session,row,context,"use"):continue

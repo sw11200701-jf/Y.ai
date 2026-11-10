@@ -78,9 +78,11 @@ def context_from_authority(session,value):
     # Synthetic framing is not a real data grant. Finance/data access still
     # requires explicit current Resource/DataGrant and entity checks.
     entities=list(dict.fromkeys(entities))
+    from app.tool_egress import configured_tool_origins
+    allowed_origins = configured_tool_origins()
     return BusinessContext(principal_type='service',tenant_id=row.tenant_id,workspace_id=row.workspace_id,operator_id=row.id,actor_id=row.id,
         role='service',session_id=None,permissions=list(RUNTIME_FEATURES),allowed_entities=entities,
-        allowed_origins=list(settings.tool_allowed_origins),allowed_tool_origins=list(settings.tool_allowed_origins),
+        allowed_origins=allowed_origins,allowed_tool_origins=allowed_origins,
         application_id=row.application_id,application_version_id=authority.version_id,client_id=row.client_id,auth_key_id=authority.key_id,
         external_user_hash=authority.external_user_hash,credential_revision=authority.credential_revision)
 
@@ -172,16 +174,18 @@ def delegation_anchor_current(session,row,created_by,context):
     return row.owner_id==user.id or session.scalar(select(ResourceGrant.resource_pk).where(ResourceGrant.resource_pk==row.id,ResourceGrant.user_id==user.id,ResourceGrant.permission=='write')) is not None
 
 
-def assert_release_dependencies(session,context):
+def assert_release_dependencies(session,context,*,execute=True):
     authority=current_authority(session,context)
     bundle=bridge().load_release(session,authority=authority.model_dump(mode='json'))
     if isinstance(bundle,BaseModel):bundle=bundle.model_dump(mode='json')
     refs=bundle.get('dependency_manifest',[]) if isinstance(bundle,dict) else None
     if not isinstance(refs,list) or len(refs)>512:raise AppError('APP_DEPENDENCY_CHANGED','应用发布依赖清单无效',409)
     from app.data_access import DATA_KINDS,authorize_data_resource
+    from app.asset_archive import live_asset
     for item in refs:
         if not isinstance(item,dict) or not isinstance(item.get('kind'),str) or not isinstance(item.get('resource_id'),str):raise AppError('APP_DEPENDENCY_CHANGED','应用发布依赖清单无效',409)
-        row=session.scalar(select(Resource).where(Resource.kind==item['kind'],Resource.resource_id==item['resource_id'],Resource.tenant_id==context.tenant_id,Resource.workspace_id==context.workspace_id).execution_options(populate_existing=True))
+        query=select(Resource).where(Resource.kind==item['kind'],Resource.resource_id==item['resource_id'],Resource.tenant_id==context.tenant_id,Resource.workspace_id==context.workspace_id)
+        row=session.scalar((query.where(live_asset(item['kind'])) if execute else query).execution_options(populate_existing=True))
         for action in item.get('actions',['use']):
             if row is None or not resource_granted(session,row,context,action):raise AppError('NOT_FOUND','应用依赖已不可访问',404)
             if row.kind in DATA_KINDS:authorize_data_resource(session=session,context=context,kind=row.kind,resource_id=row.resource_id,action=action)

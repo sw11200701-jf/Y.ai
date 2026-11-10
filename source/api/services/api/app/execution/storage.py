@@ -95,7 +95,7 @@ def authorize_dependencies(session, context, run, *, models=False, execute=False
     """The selected execution resources also guard every cached read surface."""
     if getattr(context,'principal_type','human')=='service':
         from app.machine_auth import assert_release_dependencies
-        assert_release_dependencies(session,context)
+        assert_release_dependencies(session,context,execute=execute)
     from app.resource_policy import require_execute
     if execute:require_execute(session,context)
     from app.db import get_resource
@@ -108,7 +108,7 @@ def authorize_dependencies(session, context, run, *, models=False, execute=False
     selected = []
     request = run.get("request", {})
     for source in run.get('source_resource_refs',[]):
-        get_resource(session,source['kind'],source['resource_id'],context)
+        get_resource(session,source['kind'],source['resource_id'],context,include_archived=not execute)
         if execute:require_execute(session,context,source['kind'],source['resource_id'])
     if execute and request.get('workflow_id'):require_execute(session,context,'workflow',request['workflow_id'])
     if execute and (request.get('agent_id') or request.get('draft_agent_id')):require_execute(session,context,'agent',request.get('agent_id') or request['draft_agent_id'])
@@ -124,7 +124,7 @@ def authorize_dependencies(session, context, run, *, models=False, execute=False
                 selected.append(config["binding"])
             if node.get("type") == "agent":
                 if execute:require_execute(session,context,"agent",config["agent_id"])
-                get_resource(session, "agent", config["agent_id"], context)
+                get_resource(session, "agent", config["agent_id"], context, include_archived=not execute)
                 if config.get("agent_version_id"): get_resource(session, "agent_version", config["agent_version_id"], context)
             if node.get("type") in {"iteration", "loop"}: walk(config["body"]["nodes"])
     snapshot=run.get("workflow_snapshot", {})
@@ -134,8 +134,8 @@ def authorize_dependencies(session, context, run, *, models=False, execute=False
     nodes = snapshot.get("nodes", [])
     walk([node for node in nodes if node["id"] == target] if target else nodes)
     for field in ("agent_id", "draft_agent_id"):
-        if request.get(field): get_resource(session, "agent", request[field], context)
-    if request.get("workflow_id"): get_resource(session, "workflow", request["workflow_id"], context)
+        if request.get(field): get_resource(session, "agent", request[field], context, include_archived=not execute)
+    if request.get("workflow_id"): get_resource(session, "workflow", request["workflow_id"], context, include_archived=not execute)
     for config in run.get("agent_snapshots", {}).values(): selected.extend(config.get("bindings", []))
     for raw in selected:
         tool = ToolBinding.model_validate(raw)
@@ -302,7 +302,7 @@ class DurableBridge:
                     failed = session.get(ExecutionBlob, previous.result_ref) if previous.result_ref else None
                     if failed is not None and failed.run_id == self.run_id:
                         saved = json.loads(failed.payload)
-                        if (saved.get("kind") == "observed_model_failure" and saved.get("execution_id") == execution_id
+                        if (saved.get("kind") in ("observed_model_failure", "proven_model_connection_failure") and saved.get("execution_id") == execution_id
                                 and saved.get("replay_allowed") is False):
                             error = saved["error"]
                             # A crash after failure-ledger commit but before run
@@ -375,7 +375,8 @@ class DurableBridge:
             token = current_effect.set(effect)
             try:
                 from app.knowledge.execution_scope import bind_execution
-                with bind_execution(execution), bind_message_attachments(execution.message_attachments):
+                from app.execution.model_network import bind_model_network
+                with bind_execution(execution), bind_message_attachments(execution.message_attachments), bind_model_network(execution, effect):
                     async with asyncio.timeout(max(0, deadline-time.time())):
                         result = await operation(execution)
                 self._check(session)  # cancellation/revocation fences result commit
@@ -403,16 +404,18 @@ class DurableBridge:
                 return output
             except Exception as exc:
                 from app.execution.effects import is_observed_model_failure
-                if side_effect and is_observed_model_failure(exc, effect):
-                    # Discard incomplete business state. Only fenced bookkeeping
-                    # of this just-issued, fully observed failure may commit.
+                from app.execution.model_network import is_proven_model_connection_failure
+                connection_failed = is_proven_model_connection_failure(exc, effect)
+                if side_effect and (connection_failed or is_observed_model_failure(exc, effect)):
+                    # Only fenced bookkeeping for this exact issued failure may commit.
                     session.rollback()
                     now = time.time()
                     fenced = session.execute(update(ExecutionRun).where(
                         ExecutionRun.run_id == self.run_id, ExecutionRun.lease_owner == self.lease_owner,
                         ExecutionRun.lease_until >= now).values(lease_until=now + LEASE_SECONDS))
                     if fenced.rowcount == 1:
-                        failure = {"kind": "observed_model_failure", "execution_id": execution_id,
+                        kind = "proven_model_connection_failure" if connection_failed else "observed_model_failure"
+                        failure = {"kind": kind, "execution_id": execution_id,
                                    "error": exc.as_dict(), "http_status": exc.status_code, "replay_allowed": False}
                         body = encode(failure)
                         ref = hashlib.sha256((self.run_id + ":observed-failure:" + body).encode()).hexdigest()

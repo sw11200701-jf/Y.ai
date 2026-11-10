@@ -140,13 +140,20 @@ class OpenAICompatibleAdapter:
         from .vision import validate_payload, revalidate_images
         image_secrets = validate_payload(payload)
         parsed = urlsplit(config.base_url)
-        base = f"{parsed.scheme}://{parsed.netloc}"
+        from app.execution.document_request_wait import transport_wait
+        from app.execution.model_network import ConnectionTrace, begin_model_transport
         from app.model_catalog.security import approved_model_address
-        address = await approved_model_address(config)
+        address, first_prepared_attempt = begin_model_transport(config)
+        if address is None:
+            address = await approved_model_address(config)
         host = f"[{address}]" if ":" in address else address
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         target = f"{parsed.scheme}://{host}:{port}{parsed.path.rstrip('/')}/chat/completions"
         headers = {"Host": parsed.netloc, "Accept": "text/event-stream" if payload.get('stream') else "application/json"}
+        trace = ConnectionTrace() if first_prepared_attempt else None
+        extensions = {"sni_hostname": parsed.hostname}
+        if trace is not None:
+            extensions["trace"] = trace.observe
         token = ""
         if config.secret_ref:
             try:
@@ -159,13 +166,12 @@ class OpenAICompatibleAdapter:
         try:
             self.fresh_config()
             revalidate_images()
-            from app.execution.document_request_wait import transport_wait
             with transport_wait(config) as timeout_seconds:
                 async with asyncio.timeout(timeout_seconds), httpx.AsyncClient(
                     trust_env=False, follow_redirects=False, timeout=timeout_seconds,
                 ) as client:
                     async with client.stream("POST", target, headers=headers, json=payload,
-                                             extensions={"sni_hostname": parsed.hostname}) as response:
+                                             extensions=extensions) as response:
                         if response.status_code != 200:
                             from .model_diagnostics import provider_http_error
                             raise await provider_http_error(response, secrets=(token, *image_secrets))
@@ -193,10 +199,22 @@ class OpenAICompatibleAdapter:
                     AppError("MODEL_ERROR", "真实模型JSON响应无效", 502)) from None
         except AppError:
             raise
-        except (TimeoutError, httpx.TimeoutException) as exc:
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            known = trace.error() if trace is not None else None
+            if known is not None:
+                raise known from None
+            if isinstance(exc, httpx.ConnectTimeout):
+                raise AppError("MODEL_TIMEOUT", "真实模型请求超过时限", 504,
+                    {"failure_stage": "transport", "reason": "timeout"}) from None
+            raise AppError("MODEL_ERROR", "真实模型网络连接未完成", 502,
+                {"failure_stage": "transport", "reason": "network_or_response"}) from None
+        except (TimeoutError, httpx.TimeoutException):
+            known = trace.error() if trace is not None else None
+            if known is not None:
+                raise known from None
             raise AppError("MODEL_TIMEOUT", "真实模型请求超过时限", 504,
                 {"failure_stage": "transport", "reason": "timeout"}) from None
-        except Exception as exc:
+        except Exception:
             raise AppError("MODEL_ERROR", "真实模型网络或JSON响应无效", 502,
                 {"failure_stage": "transport", "reason": "network_or_response"}) from None
 

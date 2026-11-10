@@ -105,7 +105,7 @@ export function availableVariables(workflow: WorkflowDefinition, nodeId: string,
     const next = new Set(visited); next.add(id);
     const result = workflow.edges.filter(e => e.target === id).some(e => canReachWithout(e.source, avoid, next)); reachability.set(key, result); return result;
   };
-  const conditional=(id:string)=>Array.from(ancestors(workflow,id)).some(parent=>{const n=workflow.nodes.find(n=>n.id===parent);return n&&(['if_else','question_classifier'].includes(n.type)||n.type.startsWith('trigger_'));});
+  const conditional=(id:string)=>workflow.nodes.some(node => node.id === id && typedTriggers.includes(node.type)) || Array.from(ancestors(workflow,id)).some(parent=>{const n=workflow.nodes.find(n=>n.id===parent);return n&&(['if_else','question_classifier'].includes(n.type)||n.type.startsWith('trigger_'));});
   const outputSchema=(n:WorkflowNode):Schema=>{
     if(isEntryType(n.type))return workflow.ui?.field_contract==='business_v1'?workflow.input_schema||{type:'object'}:n.output_schema||{type:'object',properties:{inputs:workflow.input_schema||{type:'object'}}};
     if(n.type==='llm'||n.type==='agent')return n.config.response_format?.type&&n.config.response_format.type!=='text'?(n.output_schema||n.config.response_format.schema||{type:'object'}):{type:'object',properties:{text:{type:'string'}}};
@@ -116,6 +116,7 @@ export function availableVariables(workflow: WorkflowDefinition, nodeId: string,
   };
   return [...schemaVariables(workflow.input_schema||{},'inputs','业务输入'),...customUserVariables.map(v=>({ref:`user_vars.${v.name}`,label:`用户变量 · ${v.name}`,type:String(v.type)})),
     ...Object.entries(workflow.variables||{}).map(([key,value])=>({ref:`vars.${key}`,label:`全局变量 · ${value?.title||key}`,type:String(value?.type||'any')})),
+    ...readonlyVariables,
     ...workflow.nodes.filter(n=>allowed.has(n.id)).flatMap(n=>schemaVariables(outputSchema(n),`nodes.${n.id}`,n.ui?.label||n.id).map(v=>({...v,optional:conditional(n.id)&&canReachWithout(nodeId,n.id)})))];
 }
 export function connectionError(workflow: WorkflowDefinition, edge: WorkflowEdge, registry: NodeRegistry | null): string | null {

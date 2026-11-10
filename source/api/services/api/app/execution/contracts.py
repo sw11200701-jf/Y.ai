@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.contracts import BusinessContext
 if TYPE_CHECKING:
     from app.execution.message_inputs import MessageAttachmentInput
+    from app.execution.model_network import ModelAddress
 
 
 def merge_branch_refs(left, right):
@@ -41,6 +42,7 @@ class NodeExecution:
     budget: dict = field(default_factory=dict)
     message_attachments: "MessageAttachmentInput | None" = None
     model_context_reservation: dict | None = None
+    model_address: "ModelAddress | None" = None
 
 
 class SubgraphBridge(Protocol):

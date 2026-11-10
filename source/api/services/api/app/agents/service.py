@@ -182,7 +182,7 @@ async def execute_agent(*, agent_id: str, prompt: str, query: FactQuery, inputs:
             error = current.get("error") or {"code": "EXECUTION_PAUSED", "message": "执行已暂停，请查看运行状态后继续"}
             code = error["code"]
             status = (503 if code in {"MODEL_NOT_CONFIGURED", "MODEL_CAPABILITY_UNAVAILABLE", "NODE_UNAVAILABLE"} else
-                      504 if code in {"RUN_TIMEOUT", "AGENT_TIMEOUT", "MODEL_TIMEOUT"} else 409 if code in {"OUTCOME_UNKNOWN", "EXECUTION_PAUSED"} else
+                      504 if code in {"RUN_TIMEOUT", "AGENT_TIMEOUT", "MODEL_TIMEOUT"} else 502 if code == "MODEL_UNREACHABLE" else 409 if code in {"OUTCOME_UNKNOWN", "EXECUTION_PAUSED"} else
                       500 if code == "INTERNAL_ERROR" else 403 if code in {"FORBIDDEN", "PERMISSION_DENIED", "CONNECTION_BLOCKED"} else 422)
             raise AppError(code, error["message"], status, {"run_id": run["id"], "status": current["status"], "cause": error.get("details")})
         if asyncio.get_running_loop().time() >= deadline:

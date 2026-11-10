@@ -54,7 +54,7 @@ async def resume(scheduler, session, context, run_id):
         if run["status"] == "failed" and session.scalar(select(ExecutionStep.execution_id).where(
                 ExecutionStep.run_id == run_id, ExecutionStep.side_effect == True, ExecutionStep.status == "failed").limit(1)):
             raise AppError("EFFECT_NOT_REPLAYABLE", "该模型调用已明确失败，禁止恢复或重放，请修正后新建运行", 409,
-                           {"response_received": True, "effect_issued": True, "automatic_retry": False})
+                           {"effect_issued": True, "automatic_retry": False})
         if run["status"] in {"queued", "running", "resuming"} or run["status"] in TERMINAL_STATUSES:
             return project_run(session, context, run)
         if run["status"] == "outcome_unknown": raise AppError("OUTCOME_UNKNOWN", "副作用结果未知，需核对后新建运行，不能自动恢复", 409)

@@ -151,14 +151,20 @@ async def retrieve_knowledge(*, config, query, context, session, top_k=5, parent
         if knowledge_pins is None or versions:
             results.append(await search_knowledge(query=query, knowledge_base_ids=libraries, version_ids=versions, top_k=top_k, context=context, session=session,
                 agent_scope=[{"kind": "knowledge_base", "resource_id": rid} for rid in libraries]))
-    return {"method": "keyword_overlap_v1", **{key: [item for result in results for item in result.get(key, [])]
+    result = {"method": "keyword_overlap_v1", **{key: [item for entry in results for item in entry.get(key, [])]
         for key in ("hits", "source_refs", "warnings", "used_versions", "used_chunks", "data_sources")}}
+    from app.knowledge.lexical_ranking import NO_KNOWLEDGE_MATCH
+    warnings = [warning for warning in result["warnings"] if warning != NO_KNOWLEDGE_MATCH]
+    if not result["hits"]:
+        warnings.append(NO_KNOWLEDGE_MATCH)
+    result["warnings"] = list(dict.fromkeys(warnings))
+    return result
 
 
 def tool_definitions(config):
     tools = []
     if any(r.get("enabled", True) for r in config.get("knowledge_resources", [])):
-        tools.append({"type": "function", "function": {"name": "knowledge_retrieval", "description": "检索已配置知识库的授权已发布文档片段；关键词检索，不执行结构化统计。", "parameters": KnowledgeCall.model_json_schema()}})
+        tools.append({"type": "function", "function": {"name": "knowledge_retrieval", "description": "检索已配置知识库的授权已发布文档片段；关键词检索，不执行结构化统计。没有命中时说明当前知识未找到依据，请勿猜测制度或数据。", "parameters": KnowledgeCall.model_json_schema()}})
     if scope(config):
         from app.data_access import ControlledQuery
         query_schema = ControlledQuery.model_json_schema()

@@ -245,6 +245,13 @@ def active_builtin_document(identifier:str,document_id:str,session=Depends(get_s
     from app.execution.document_activity import active_document_job
     return {'active_job':active_document_job(session,context,document_id)}
 
+@router.post('/builtin-agents/{identifier}/document-job-budget')
+def preview_builtin_document_budget(identifier:str,body:DocumentJobSubmit,session=Depends(get_session),context=Depends(get_context)):
+    require_builtin(identifier);authorize(session,context)
+    from app.execution.semantic_jobs import preview_document_budget
+    return preview_document_budget(context=context,session=session,agent_id=document_agent(session,context,body.document_id,identifier),**body.model_dump())
+
+
 @router.post('/builtin-agents/{identifier}/document-jobs',status_code=202)
 async def submit_builtin_document(identifier:str,body:DocumentJobSubmit,session=Depends(get_session),context=Depends(get_context)):
     require_builtin(identifier);authorize(session,context)

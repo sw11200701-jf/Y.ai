@@ -15,6 +15,28 @@ export function newSubflow(parent: WorkflowDefinition, repeat: WorkflowNode): Wo
   return result;
 }
 
+export function basicRepeat(parent: WorkflowDefinition, repeat: WorkflowNode): Pick<WorkflowNode, 'config' | 'inputs' | 'input_schema'> {
+  const config = {
+    ...repeat.config,
+    body: newSubflow(parent, repeat),
+    max_iterations: repeat.config.max_iterations ?? 3,
+    timeout_seconds: repeat.config.timeout_seconds ?? 30,
+  };
+  if (repeat.type === 'loop') {
+    return {
+      config: { ...config, until: repeat.config.until ?? { left: { $ref: 'loop.index' }, operator: 'gte', right: 0 } },
+      inputs: repeat.inputs,
+      input_schema: repeat.input_schema,
+    };
+  }
+  const schema = repeat.input_schema;
+  return {
+    config,
+    inputs: { ...repeat.inputs, items: repeat.inputs?.items ?? [] },
+    input_schema: { ...schema, type: 'object', properties: { ...schema?.properties, items: schema?.properties?.items ?? { type: 'array' } } },
+  };
+}
+
 /** An ordinary bounded counter loop is a useful starting point, not a runtime shortcut. */
 export function counterLoop(parent: WorkflowDefinition, repeat: WorkflowNode): { config: WorkflowNode['config']; inputs: WorkflowNode['inputs'];input_schema:WorkflowNode['input_schema'] } {
   const body = newWorkflow(); body.name = '计数循环子流程'; body.input_schema = clone(parent.input_schema || { type: 'object' });

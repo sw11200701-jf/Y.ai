@@ -9,7 +9,8 @@ from app.db import new_id, utc_now
 from .data_store import get_resource, list_resources, save_resource, decision, link
 from app.data_access import filter_rows, _unrestricted, _column_policy
 from app.errors import AppError
-from app.imports.documents import import_document, extract_document, _terms
+from app.imports.documents import import_document, extract_document
+from .lexical_ranking import NO_KNOWLEDGE_MATCH, match_chunk, prepare_query
 from .schemas import DatasetWrite, BatchRevision, DocumentOverview
 from .governance import parse_table, assess, corrected_rows, FINANCE_FIELDS
 from app.imports.chunking import extract_chunks, counts, text_hash, source_label
@@ -507,8 +508,11 @@ def download_file(*, file_id, context, session):
 
 async def search_knowledge(*, query, knowledge_base_ids, context, session, file_ids=None, version_ids=None, top_k=5, agent_scope=None):
     layers = scope_layers(agent_scope, knowledge=True)
-    if not isinstance(query, str) or not query.strip() or len(query) > 500 or not _terms(query):
+    if not isinstance(query, str) or not query.strip() or len(query) > 500:
         raise AppError("VALIDATION_ERROR", "请输入1..500字有效检索词")
+    search_query = prepare_query(query)
+    if not search_query[2]:
+        raise AppError("VALIDATION_ERROR", "请输入包含主题或关键词的检索问题")
     for values, label in ((knowledge_base_ids, "knowledge_base_ids"), (file_ids, "file_ids"), (version_ids, "version_ids")):
         if values is None and label != "knowledge_base_ids": continue
         if not isinstance(values, list) or not 1 <= len(values) <= 20 or any(not isinstance(v, str) for v in values) or len(set(values)) != len(values):
@@ -568,23 +572,23 @@ async def search_knowledge(*, query, knowledge_base_ids, context, session, file_
                 continue
         current.append(version)
     selected=current
-    ranked, terms = [], _terms(query)
+    ranked = []
     for version in selected:
         root = entry(version["resource_kind"], version["resource_id"], context, session)
         visible = visible_chunks(version, root, context, session)
         for chunk in visible:
             if not chunk.get("enabled", True): continue
             if not chunk.get("text") or chunk["text"] == "***": continue
-            tokens = _terms(chunk["text"])
-            matched = sorted(set(terms) & set(tokens))
-            if not matched: continue
-            score = Decimal(len(matched))*3/Decimal(len(terms)) + Decimal(sum(min(tokens[t], 3) for t in matched))/100
-            if query.strip().lower() in chunk["text"].lower(): score += 1
+            match = match_chunk(search_query, chunk["text"])
+            if match is None: continue
+            matched, score = match
             ranked.append({**chunk, "knowledge_base_id": version["knowledge_base_id"], "resource_id": version["resource_id"],
                            "version_id": version["id"], "snapshot_id": version["content_sha256"], "source_sha256": version.get("source_sha256"), "matched_terms": matched,
-                           "score": format(score.quantize(Decimal("0.000001")), "f")})
+                           "score": score})
     ranked.sort(key=lambda h: (-Decimal(h["score"]), h["version_id"], h["id"]))
     hits = ranked[:top_k]
+    if not hits:
+        provenance_warnings.append(NO_KNOWLEDGE_MATCH)
     from .slicing_retrieval import expand_hits
     def visible_for_expansion(version):
         root=entry(version['resource_kind'],version['resource_id'],context,session)

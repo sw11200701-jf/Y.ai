@@ -12,7 +12,7 @@ def references(value):
     if isinstance(value,dict):
         if "$ref" in value:
             if set(value)-{"$ref","optional"} or not isinstance(value["$ref"],str) or not PATH.fullmatch(value["$ref"]) or ("optional" in value and not isinstance(value["optional"],bool)):
-                raise AppError("INVALID_WORKFLOW","Invalid variable reference")
+                raise AppError("INVALID_WORKFLOW","变量引用格式无效")
             yield value
         else:
             for item in value.values(): yield from references(item)
@@ -35,19 +35,19 @@ def resolve(value,pool):
     if isinstance(value,list): return [resolve(item,pool) for item in value]
     return value
 
-def check_schema(value,schema,label):
+def check_schema(value,schema,_label):
     error=next(Draft202012Validator(schema).iter_errors(value),None)
-    if error: raise AppError("VARIABLE_TYPE_MISMATCH",f"{label}: {error.message}")
+    if error: raise AppError("VARIABLE_TYPE_MISMATCH", "字段值不符合所定义的类型或格式")
 
 def validate_json_schema(schema):
     try: Draft202012Validator.check_schema(schema)
-    except Exception as exc: raise AppError("INVALID_WORKFLOW","Invalid JSON Schema") from exc
+    except Exception as exc: raise AppError("INVALID_WORKFLOW","字段定义不是有效的 JSON Schema") from exc
     def walk(value):
         if isinstance(value,dict):
             if "$dynamicRef" in value or "$recursiveRef" in value:
                 raise AppError("INVALID_WORKFLOW","仅支持本地$defs静态Schema引用")
             if "$ref" in value and not str(value["$ref"]).startswith("#/$defs/"):
-                raise AppError("INVALID_WORKFLOW","Only local JSON Schema references are permitted")
+                raise AppError("INVALID_WORKFLOW","JSON Schema 只允许引用本地 $defs 字段")
             for item in value.values(): walk(item)
         elif isinstance(value,list):
             for item in value: walk(item)

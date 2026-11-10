@@ -110,15 +110,11 @@ def materialize_binding(selection, context, session) -> ToolBinding:
     return binding
 
 
-def execution_context(context: BusinessContext, connection: dict) -> dict:
-    from app.connections.security import origin
+def execution_context(context: BusinessContext, session: Session) -> dict:
+    from app.tool_egress import origins_for_context
     trusted = context.model_dump()
-    # Resource access is owner/grant checked before resolving this target policy.
-    allowed = trusted.get("allowed_tool_origins", trusted.get("allowed_origins"))
-    if allowed is None:
-        from app.settings import settings
-        allowed = getattr(settings, "tool_allowed_origins", None)
-    return {"allowed_origins": allowed if allowed is not None else [origin(connection["base_url"])],
+    # Re-read the workspace policy immediately before the authorized tool's send.
+    return {"allowed_origins": origins_for_context(session, context),
             "allowed_entities": trusted.get("allowed_entities", ["SYNTHETIC-DEMO"]),
             "secret_resolver": read_secret,
             "tool_timeout_seconds": trusted.get("tool_timeout_seconds", 10),
@@ -132,7 +128,7 @@ async def execute_tool(*, binding: ToolBinding, arguments: dict,
         raise AppError("CONNECTION_BLOCKED", "智能体无权调用该工具绑定", status_code=403)
     resolved = resolve_binding(binding, context, session)
     try:
-        result = await execute_resolved_tool(resolved, arguments, execution_context(context, resolved["connection"]))
+        result = await execute_resolved_tool(resolved, arguments, execution_context(context, session))
     except PluginError as exc:
         raise AppError(exc.code, exc.message, status_code=exc.status_code, details={"audit": {
             "status": "failed", "plugin_version_id": binding.plugin_version_id,
@@ -177,7 +173,7 @@ async def test_draft(*, plugin_id: str, endpoint_id: str, connection_id: str, ar
     resolved = {"plugin_version_id": "draft:" + plugin_id, "tool_id": endpoint_id,
                 "connection_id": connection_id, "endpoint": endpoint, "connection": connection}
     try:
-        result = await execute_resolved_tool(resolved, arguments, execution_context(context, connection))
+        result = await execute_resolved_tool(resolved, arguments, execution_context(context, session))
     except PluginError as exc:
         raise AppError(exc.code, exc.message, exc.status_code, details={"audit": {
             "status": "failed", "draft": True, "plugin_id": plugin_id,

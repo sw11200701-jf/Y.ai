@@ -139,3 +139,6 @@
 .studio .nodeInputTable input:not([type=checkbox]),.studio .nodeInputTable select,.studio .nodeInputTable button{min-height:32px;height:32px;font-size:12px;padding:4px 6px;white-space:nowrap;}
 .nodeInputTable .field{margin:0;gap:0;}.nodeInputTable .fieldTitle{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);}
 .nodeInputTable[data-definitions-only=true] table{min-width:300px;}.nodeInputTable[data-definitions-only=true] th:nth-child(1){width:55%;}.nodeInputTable[data-definitions-only=true] th:nth-child(2){width:auto;}
+
+.node[data-invalid='true'] { border-color: var(--danger, #b5504a); }
+.node[data-invalid='true'] .nodeFoot > span:first-child { color: var(--danger, #b5504a); }

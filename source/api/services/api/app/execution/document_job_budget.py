@@ -70,11 +70,12 @@ def runtime_timeout(*,run,session,context,ordinary_seconds,document_ceiling_seco
     return (spec['wall_time_seconds'],spec) if spec else (ordinary_seconds,None)
 
 
-def require_model_time(plan,deadline_epoch,*,now=None):
+def require_model_time(plan,deadline_epoch,*,now=None,address_prepared=False):
     spec=plan.get('time_budget')
     if spec is None:return
     current=time.time() if now is None else now
-    needed=spec['provider_timeout_seconds']+spec['per_call_overhead_seconds']+spec.get('resolver_allowance_seconds',0)+spec['finalize_allowance_seconds']
+    resolver_allowance = 0 if address_prepared else spec.get('resolver_allowance_seconds', 0)
+    needed=spec['provider_timeout_seconds']+spec['per_call_overhead_seconds']+resolver_allowance+spec['finalize_allowance_seconds']
     remaining=(deadline_epoch-current) if (type(deadline_epoch) in (int,float) and math.isfinite(deadline_epoch)
         and type(current) in (int,float) and math.isfinite(current)) else -1
     if remaining<needed:

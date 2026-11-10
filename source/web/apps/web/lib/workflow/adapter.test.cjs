@@ -1,13 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const ts = require('typescript');
-const compiled = ts.transpileModule(fs.readFileSync(`${__dirname}/adapter.ts`, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
-const labelSandbox = { exports: {} }; vm.runInNewContext(ts.transpileModule(fs.readFileSync(`${__dirname}/labels.ts`, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, labelSandbox);
-const sandbox = { exports: {}, require: id => id === './labels' ? labelSandbox.exports : require(id), crypto: require('node:crypto').webcrypto };
-vm.runInNewContext(compiled, sandbox);
-const a = sandbox.exports;
+const a = require('./test-module.cjs')('lib/workflow/adapter.ts');
 const normalize = v => JSON.parse(JSON.stringify(v));
 const registry = { version: '2.0.0', items: [{ type: 'template', output_schema: { properties: { text: { type: 'string' } } }, ports: ['default'] }, { type: 'plugin', config_schema: { properties: { binding: {}, arguments: {} }, additionalProperties: false } }], limits: {} };
 test('legacy copy retains original and unknown fields and binds nearest prior fact producer', () => {
@@ -51,7 +44,8 @@ test('position adapter reads old layout and new UI position without mutating con
 });
 test('new graph has explicit DSL version and exact reference object', () => {
   const w = a.newWorkflow(); assert.equal(w.schemaVersion, '2.0'); assert.equal(w.version, '1.0.0');
-  assert.deepEqual(normalize(w.nodes[1].inputs.text), { $ref: 'inputs.message' }); assert.equal(w.edges[0].source_port, 'default');
+  assert.deepEqual(normalize(w.nodes[1].inputs), {});
+  assert.equal(w.ui.field_contract, 'business_v1'); assert.equal(w.edges[0].source_port, 'default');
 });
 test('edge identity remains stable when node and incident edges are deleted together', () => {
   const edges = [{ source: 'a', target: 'b' }, { source: 'b', target: 'c' }, { source: 'c', target: 'd' }];
@@ -61,18 +55,18 @@ test('edge identity remains stable when node and incident edges are deleted toge
   assert.notEqual(a.edgeKey({ source: 'a', target: 'b', source_port: 'true' }), a.edgeKey({ source: 'a', target: 'b', source_port: 'false' }));
 });
 test('branch-dependent variable choices are optional while dominating upstream outputs are required', () => {
-  const w = a.newWorkflow(); w.nodes = ['start', 'decision', 'yes', 'no', 'merge', 'answer'].map(id => ({ id, type: id === 'start' ? 'start' : id === 'answer' ? 'answer' : 'template', config: {} }));
+  const w = a.newWorkflow(); w.nodes = ['start', 'decision', 'yes', 'no', 'merge', 'answer'].map(id => ({ id, type: id === 'start' ? 'start' : id === 'answer' ? 'answer' : id === 'decision' ? 'if_else' : 'template', config: {}, ...(id === 'decision' ? { output_schema: { properties: { text: { type: 'string' } } } } : {}) }));
   w.edges = [{ source: 'start', target: 'decision' }, { source: 'decision', target: 'yes' }, { source: 'decision', target: 'no' }, { source: 'yes', target: 'merge' }, { source: 'no', target: 'merge' }, { source: 'merge', target: 'answer' }];
   const choices = a.availableVariables(w, 'merge', registry);
   assert.equal(choices.find(v => v.ref === 'nodes.yes.text').optional, true);
   assert.equal(choices.find(v => v.ref === 'nodes.no.text').optional, true);
   assert.equal(choices.find(v => v.ref === 'nodes.decision.text').optional, false);
-  assert(choices.some(v => v.ref === 'nodes.decision' && v.type === 'object'));
+  assert(!choices.some(v => v.ref === 'nodes.decision'), 'only declared output fields are offered');
 });
 test('new Agent canvas uses exact message trigger and visible output while old defaults remain compatible', () => {
   const catalog = { ...registry, items: [...registry.items, { type: 'trigger_text', status: 'supported', category: 'trigger' }, { type: 'output', status: 'supported' }] };
-  const workflow = a.newAgentWorkflow(catalog); assert.equal(workflow.nodes[0].type, 'trigger_text'); assert.equal(workflow.nodes[1].type, 'output'); assert.equal(workflow.nodes[1].inputs.text.$ref, 'nodes.message_text.message.text');
-  assert.equal(a.newWorkflow().nodes[0].type, 'start'); assert.throws(() => a.newAgentWorkflow(registry), /尚未就绪/);
+  const workflow = a.newAgentWorkflow(catalog); assert.equal(workflow.nodes[0].type, 'trigger_text'); assert.equal(workflow.nodes[1].type, 'output'); assert.equal(workflow.nodes[1].inputs.text.$ref, 'nodes.message_text.text');
+  assert.equal(a.newWorkflow().nodes[0].type, 'start'); assert.throws(() => a.newAgentWorkflow(registry), /尚未开放/);
 });
 test('typed entries may coexist once per type, cannot mix legacy roots or accept input edges', () => {
   const workflow = { ...a.newWorkflow(), nodes: [{ id: 't', type: 'trigger_text', config: {} }, { id: 'o', type: 'output', config: {} }], edges: [] };
@@ -83,23 +77,23 @@ test('typed entries may coexist once per type, cannot mix legacy roots or accept
   assert.match(a.connectionError(workflow, { source: 'o', target: 't' }, registry), /不能有输入/);
 });
 test('multi-entry variable pool references are branch-optional and expose controlled message metadata', () => {
-  const workflow = { ...a.newWorkflow(), nodes: [{ id: 't', type: 'trigger_text', config: {} }, { id: 'i', type: 'trigger_image', config: {} }, { id: 'm', type: 'aggregate', config: {} }], edges: [{ source: 't', target: 'm' }, { source: 'i', target: 'm' }] };
+  const workflow = { ...a.newWorkflow(), input_schema: { type: 'object', properties: { text: { type: 'string' }, attachment_ids: { type: 'array' } } }, nodes: [{ id: 't', type: 'trigger_text', config: {} }, { id: 'i', type: 'trigger_image', config: {} }, { id: 'm', type: 'aggregate', config: {} }], edges: [{ source: 't', target: 'm' }, { source: 'i', target: 'm' }] };
   const choices = a.availableVariables(workflow, 'm', registry);
-  assert.equal(choices.find(v => v.ref === 'nodes.t.message.text').optional, true);
-  assert.equal(choices.find(v => v.ref === 'nodes.i.message.attachment_ids').type, 'array');
+  assert.equal(choices.find(v => v.ref === 'nodes.t.text').optional, true);
+  assert.equal(choices.find(v => v.ref === 'nodes.i.attachment_ids').type, 'array');
   assert(!choices.some(v => /\.path|\.base64|\.token/.test(v.ref)));
 });
-test('knowledge variables expose real slice text and source with empty-hit optionality and no duplicate references', () => {
+test('knowledge variables offer only declared upstream outputs without duplicate references', () => {
   const workflow = { ...a.newWorkflow(), nodes: [{ id: 'start', type: 'start', config: {} }, { id: 'knowledge', type: 'knowledge_retrieval', config: {} }, { id: 'reply', type: 'output', config: {} }], edges: [{ source: 'start', target: 'knowledge' }, { source: 'knowledge', target: 'reply' }] };
   const choices = a.availableVariables(workflow, 'reply', { ...registry, items: [{ type: 'knowledge_retrieval', output_schema: { properties: { hits: { type: 'array' }, used_versions: { type: 'array' } } } }] });
-  assert.equal(choices.find(v => v.ref === 'nodes.knowledge.hits.0.text').optional, true);
-  assert.equal(choices.find(v => v.ref === 'nodes.knowledge.hits.0.source_ref').type, 'string');
-  assert.equal(choices.find(v => v.ref === 'nodes.knowledge.used_chunks').type, 'array');
+  assert.equal(choices.find(v => v.ref === 'nodes.knowledge.hits').type, 'array');
+  assert(!choices.some(v => v.ref.startsWith('nodes.knowledge.hits.0.')));
   assert.equal(choices.filter(v => v.ref === 'nodes.knowledge.used_versions').length, 1);
 });
-test('database variables expose rows columns version and policy only from connected upstream query nodes', () => {
+test('database variables expose declared business fields only from connected upstream query nodes', () => {
   const workflow = { ...a.newWorkflow(), nodes: [{ id: 'start', type: 'start', config: {} }, { id: 'db', type: 'database_query', config: {} }, { id: 'unused', type: 'database_query', config: {} }, { id: 'reply', type: 'output', config: {} }], edges: [{ source: 'start', target: 'db' }, { source: 'db', target: 'reply' }] };
-  const choices = a.availableVariables(workflow, 'reply', registry);
-  for (const key of ['rows', 'columns', 'version_id', 'policy_version', 'source_refs']) assert(choices.some(v => v.ref === `nodes.db.${key}`));
+  const choices = a.availableVariables(workflow, 'reply', { items: [{ type: 'database_query', output_schema: { properties: { rows: { type: 'array' }, columns: { type: 'array' }, version_id: { type: 'string' }, policy_version: { type: 'string' }, source_refs: { type: 'array' } } } }] });
+  assert(!choices.some(v => /policy_version|source_refs/.test(v.ref)));
+  for (const key of ['rows', 'columns', 'version_id']) assert(choices.some(v => v.ref === `nodes.db.${key}`));
   assert(!choices.some(v => v.ref.startsWith('nodes.unused')));
 });

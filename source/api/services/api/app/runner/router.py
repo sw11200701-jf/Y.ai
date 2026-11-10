@@ -124,6 +124,14 @@ async def create_run(body: RunCreate, request: Request, session: Session = Depen
     submitted=body.model_copy(update={"request_id":getattr(request.state,"request_id",None)})
     return project_run(session, context, await scheduler.submit(submitted, context, session))
 
+@router.get("/runs/retention-summary")
+def run_retention_summary(session: Session = Depends(get_session), context: BusinessContext = Depends(get_context)):
+    from app.rbac import require_permission
+    from app.execution.run_directory import retention_summary
+    require_permission(context, session, "page.runs")
+    return retention_summary(session, context)
+
+
 @router.get("/runs/{run_id}")
 def run_detail(run_id: str, session: Session = Depends(get_session), context: BusinessContext = Depends(get_context)):
     from app.execution.api import project_run

@@ -80,10 +80,15 @@ class RunScheduler:
         import time
         from app.execution.models import ExecutionRun
         from app.execution.storage import fresh_context
+        next_auth_cleanup = 0
         while self.accepting:
             with SessionLocal() as session:
                 from app.execution.approvals import expire_waiting
                 expire_waiting(session)
+                if time.monotonic() >= next_auth_cleanup:
+                    from app.auth import prune_expired_login_state
+                    prune_expired_login_state(session)
+                    next_auth_cleanup = time.monotonic() + 3600
                 for binding in session.scalars(select(ExecutionRun).where(ExecutionRun.lease_until < time.time())):
                     from app.execution.retained_intents import is_retained
                     if is_retained(binding.run_id):continue

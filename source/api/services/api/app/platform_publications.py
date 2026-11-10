@@ -96,12 +96,16 @@ def authorized_publication(session,context,publication_id,execute=True):
     if bundle_digest(bundle)!=value['bundle_sha256']:raise AppError('PUBLICATION_CHANGED','发布快照校验失败',409)
     source=bundle['source_identity'];source_row=_row(session,source['kind'],source['id'],context.tenant_id,context.workspace_id)
     if source_row is None:raise AppError('NOT_FOUND','发布来源已不可用',404)
+    if execute:
+        from app.asset_archive import live_asset
+        if session.scalar(select(Resource.id).where(Resource.id==source_row.id,live_asset(source['kind']))) is None:
+            raise AppError('NOT_FOUND','发布来源已不可用',404)
     require_token_resource(session,context,source_row,'execute' if execute else 'read')
     # Every dependency is still checked against this token and the real account's
     # current domain grants. Saved snapshot fields never confer access.
     for dependency in bundle['dependency_manifest']:
         kind,identifier=dependency['kind'],dependency['resource_id']
-        resource=get_resource(session,kind,identifier,context)
+        resource=get_resource(session,kind,identifier,context,include_archived=not execute)
         if dependency.get('revision') is not None and resource.get('revision')!=dependency['revision']:raise AppError('PUBLICATION_DEPENDENCY_CHANGED','发布依赖版本已变化，请重新发布',409)
         if kind=='agent_version' and resource.get('status')!='published':raise AppError('PUBLICATION_DEPENDENCY_CHANGED','智能体发布版本已停用',409)
         if kind=='agent' and execute:

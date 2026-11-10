@@ -27,7 +27,7 @@ def published_tool_catalog(*, context, session):
                     continue
                 raise
             endpoint = resolved['endpoint']
-            policy = execution_context(context, resolved['connection'])
+            policy = execution_context(context, session)
             items.append({'binding': raw_binding, 'version': version['version'], 'name': tool['name'],
                 'description': tool['description'], 'call_method': 'published_http',
                 'http_method': endpoint['method'], 'request_encoding': endpoint.get('request_encoding', 'json'),

@@ -12,6 +12,17 @@ from app.execution.effects import get_effect_context
 
 _active=ContextVar('document_request_wait',default=None)
 
+
+async def prepare_document_address(plan, execution, *, config=None):
+    from app.execution.document_job_budget import require_model_time
+    from app.execution.model_network import prepare_model_address
+    deadline = execution.budget['deadline_epoch']
+    require_model_time(plan, deadline)
+    await prepare_model_address(execution, config=config, model_config_id=plan['model_config_id'],
+                                model_config_version=plan['model_version'])
+    require_model_time(plan, deadline, address_prepared=True)
+
+
 @contextmanager
 def document_wait(plan, execution):
     from app.execution.document_job_budget import CONTRACT
@@ -26,7 +37,7 @@ def document_wait(plan, execution):
     pool=spec['shared_provider_wait_seconds'];base=spec['provider_timeout_seconds']
     if type(used) is not int or not 0<=used<=pool:
         raise AppError('DOCUMENT_JOB_TIME_BUDGET_INVALID','已用模型等待预算无效',409)
-    remaining=budget['deadline_epoch']-time.time()-spec['finalize_allowance_seconds']-spec['per_call_overhead_seconds']-spec.get('resolver_allowance_seconds',0)
+    remaining=budget['deadline_epoch']-time.time()-spec['finalize_allowance_seconds']-spec['per_call_overhead_seconds']-(0 if execution.model_address is not None else spec.get('resolver_allowance_seconds',0))
     timeout=min(spec['per_request_timeout_ceiling_seconds'],base+pool-used,remaining)
     if timeout<base:
         raise AppError('DOCUMENT_JOB_TIME_BUDGET_EXHAUSTED','剩余时间不足，未发送模型请求',422)
