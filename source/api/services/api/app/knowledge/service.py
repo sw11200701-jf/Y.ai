@@ -416,21 +416,26 @@ def version_decision(version, root, context, session):
         layers.extend(decision(session, kind, resource_id, context).layers)
     return replace(authorized, layers=layers)
 
-def visible_chunks(version, root, context, session):
+def visible_chunks(version, root, context, session, *, chunk_ids=None):
     authorized = version_decision(version, root, context, session)
-    fields = chunk_fields(version, root)
+    rows = presented_chunks(version, root)
+    fields = list(dict.fromkeys(key for row in rows for key in row))
     allowed, masks = _column_policy(authorized, fields)
     required = {"text", "id", "enabled", "source_ref"}
     if not required <= allowed or required & set(masks):
         return []
-    return filter_rows(decision=authorized, rows=presented_chunks(version, root), fields=fields,
+    if chunk_ids is not None:
+        rows = [row for row in rows if row['id'] in chunk_ids]
+    return filter_rows(decision=authorized, rows=rows, fields=fields,
         query={"limit": 1000})["rows"]
 
 def presented_chunks(version, root):
+    from .customer_chunks import knowledge_id
     result = []
     for number, chunk in enumerate(version["chunks"], 1):
         enabled = chunk.get("enabled", True)
-        result.append({**chunk, "chunk_id": chunk["id"], "sequence": chunk.get("sequence", number), "enabled": enabled,
+        result.append({**chunk, "chunk_id": chunk["id"], "knowledge_id": knowledge_id(chunk, version["id"], number),
+                       "sequence": chunk.get("sequence", number), "enabled": enabled,
                        "status": "enabled" if enabled else "disabled", "version_status": version["status"],
                        "document_id": root["id"], "document_name": root["name"],
                        "source_label": chunk.get("source_label", source_label(chunk["locator"])),
@@ -457,6 +462,33 @@ def document_chunks(*, document_id, version_id, context, session, **options):
         return {"document_id": document_id, "version_id": None, "total": 0, "chunk_count": 0, "items": [], "message": "文档尚未解析"}
     checked_version(selected, root, context, session)
     return version_chunks(version_id=selected, context=context, session=session, **options)
+
+
+def knowledge_item(*, document_id, identifier, context, session, version_id=None, for_update=False):
+    from .customer_chunks import historical_id, knowledge_id, text as customer_text
+    root = entry('knowledge_document', document_id, context, session, write=for_update)
+    head = root.get('draft_version_id') or root.get('published_version_id')
+    if for_update:
+        require_full_document_maintenance(root, context, session)
+        if version_id != head:
+            raise AppError('KNOWLEDGE_REVISION_CONFLICT', '知识已有更新，请读取最新版本后再提交', 409)
+    selected = version_id or head
+    if not selected:
+        missing()
+    version = checked_version(selected, root, context, session, write=for_update)
+    aliases = {chunk['id']: knowledge_id(chunk, selected, index)
+               for index, chunk in enumerate(version['chunks'], 1)
+               if identifier in (chunk['id'], knowledge_id(chunk, selected, index), historical_id(chunk))}
+    visible = visible_chunks(version, root, context, session, chunk_ids=aliases)
+    matches = [row for row in visible if row['id'] == identifier or row.get('knowledge_id') == aliases[row['id']]]
+    if not matches:
+        missing()
+    if len(matches) != 1:
+        raise AppError('KNOWLEDGE_ID_AMBIGUOUS', '此知识标识对应多条记录，请使用当前版本的切片 ID', 409)
+    item = matches[0]
+    if for_update and item.get('knowledge_id') != aliases[item['id']]:
+        raise AppError('DATA_SCOPE_WRITE_DENIED', '单条知识修改需要可读取的知识标识', 403)
+    return {'version_id': selected, 'item': {**item, 'display_text': customer_text(item)}}
 
 def record_parse_failure(*, document_id, options, error, context, session):
     root = entry("knowledge_document", document_id, context, session, write=True)

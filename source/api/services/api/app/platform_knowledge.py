@@ -9,7 +9,7 @@ from app.db import get_session, utc_now
 from app.errors import AppError
 from app.imports.documents import upload_contract
 from app.knowledge import service as s
-from app.knowledge.schemas import DocumentRevision, LibraryWrite, ParseRequest, PublishRequest, SearchRequest
+from app.knowledge.schemas import ChunkPatch, DocumentRevision, LibraryWrite, ParseRequest, PublishRequest, SearchRequest
 from app.knowledge.source_revision import check_etag, etag, replace_original
 from app.platform_api import Strict, _put, _row, _value, platform_context, runtime, write_lock
 from app.rbac import audit
@@ -17,11 +17,14 @@ from app.rbac import audit
 BASE = '/spaces/{workspace_id}/knowledge-bases'
 DOC = '/spaces/{workspace_id}/knowledge/documents/{document_id}'
 EXTERNAL = BASE + '/{kb_id}/documents/by-external-id/{external_id}'
+ITEMS = DOC + '/items'
+ITEM = ITEMS + '/{knowledge_id}'
 Profile = Literal['legacy', 'portable-slicing-1.0.0']
 ExternalId = Annotated[str, Path(min_length=1, max_length=128, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.:-]*$')]
 Expected = Annotated[str | None, Header(alias='If-Match', max_length=128)]
 Offset = Annotated[int, Query(ge=0, le=5000)]
 Limit = Annotated[int, Query(ge=1, le=100)]
+KnowledgeId = Annotated[str, Path(min_length=1, max_length=160)]
 
 
 class LibraryPatch(Strict):
@@ -37,6 +40,29 @@ class LibraryPatch(Strict):
 
 class DocumentPatch(Strict):
     name: str = Field(min_length=1, max_length=150)
+
+
+class ItemCreate(Strict):
+    base_version_id: str = Field(min_length=1, max_length=160)
+    source_knowledge_id: str = Field(min_length=1, max_length=160)
+    text: str = Field(min_length=1, max_length=32700)
+    topic: str = Field(default='', max_length=200)
+    enabled: bool = True
+
+
+class ItemView(Strict):
+    version_id: str
+    item: dict
+
+
+class ItemChange(ItemView):
+    requires_publish: Literal[True]
+
+
+class ItemDeletion(Strict):
+    version_id: str
+    knowledge_id: str
+    requires_publish: Literal[True]
 
 
 def context(request, session, workspace_id):
@@ -246,6 +272,49 @@ def document_chunks(workspace_id: str, document_id: str, request: Request,
     current = context(request, session, workspace_id)
     return s.document_chunks(document_id=document_id, version_id=version_id, offset=offset, limit=limit, q=q,
                              enabled=enabled, context=current, session=session)
+
+
+@runtime.get(ITEM, response_model=ItemView, summary='按知识 ID 读取单条知识，默认使用最新保存版本')
+def read_item(workspace_id: str, document_id: str, knowledge_id: KnowledgeId, request: Request,
+              version_id: str | None = Query(None, min_length=1, max_length=160), session=Depends(get_session)):
+    return s.knowledge_item(document_id=document_id, identifier=knowledge_id, version_id=version_id,
+                            context=context(request, session, workspace_id), session=session)
+
+
+@runtime.post(ITEMS, status_code=201, response_model=ItemChange, summary='基于现有来源新增单条知识，保存为新草稿')
+async def add_item(workspace_id: str, document_id: str, body: ItemCreate, request: Request, session=Depends(get_session)):
+    current = context(request, session, workspace_id)
+    source = s.knowledge_item(document_id=document_id, identifier=body.source_knowledge_id, version_id=body.base_version_id,
+                              context=current, session=session, for_update=True)['item']
+    addition = {'source_chunk_id': source['id'], **body.model_dump(exclude={'base_version_id', 'source_knowledge_id'})}
+    result = await s.revise_document(document_id=document_id, base_version_id=body.base_version_id, corrections=[],
+                                     additions=[addition], context=current, session=session)
+    return s.knowledge_item(document_id=document_id, identifier=result['added_knowledge_ids'][0], version_id=result['id'],
+                            context=current, session=session) | {'requires_publish': True}
+
+
+@runtime.patch(ITEM, response_model=ItemChange, summary='修改单条知识的正文、主题或启用状态，保存为新草稿')
+async def patch_item(workspace_id: str, document_id: str, knowledge_id: KnowledgeId, body: ChunkPatch,
+                     request: Request, session=Depends(get_session)):
+    current = context(request, session, workspace_id)
+    item = s.knowledge_item(document_id=document_id, identifier=knowledge_id, version_id=body.base_version_id,
+                            context=current, session=session, for_update=True)['item']
+    correction = {'chunk_id': item['id'], **body.model_dump(exclude={'base_version_id'}, exclude_none=True)}
+    result = await s.revise_document(document_id=document_id, base_version_id=body.base_version_id, corrections=[correction],
+                                     context=current, session=session)
+    return s.knowledge_item(document_id=document_id, identifier=item['knowledge_id'], version_id=result['id'],
+                            context=current, session=session) | {'requires_publish': True}
+
+
+@runtime.delete(ITEM, response_model=ItemDeletion, summary='从新草稿移除单条知识，保留历史版本')
+async def delete_item(workspace_id: str, document_id: str, knowledge_id: KnowledgeId, request: Request,
+                      base_version_id: str = Query(min_length=1, max_length=160), session=Depends(get_session)):
+    current = context(request, session, workspace_id)
+    item = s.knowledge_item(document_id=document_id, identifier=knowledge_id, version_id=base_version_id,
+                            context=current, session=session, for_update=True)['item']
+    result = await s.revise_document(document_id=document_id, base_version_id=base_version_id, corrections=[],
+                                     deletions=[item['id']], context=current, session=session)
+    return {'version_id': result['id'], 'knowledge_id': item['knowledge_id'], 'requires_publish': True}
 
 
 @runtime.get(DOC + '/chunks/latest.xlsx', response_class=Response, summary='导出最新保存的完整知识 XLSX')

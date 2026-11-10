@@ -1,10 +1,12 @@
 """Platform publications and knowledge sync against a fresh synthetic database."""
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 import os
 import time
 
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 from app.main import app
 from model_network_smoke import ORIGIN, body, post
@@ -108,13 +110,44 @@ def check():
             assert len(call('GET', doc_path + '/versions').json()['items']) == 3
             exported = call('GET', doc_path + '/chunks/latest.xlsx', params={'expected_version_id': saved})
             assert exported.content.startswith(b'PK') and exported.headers['x-knowledge-version-id'] == saved
+            knowledge = chunks[0]['knowledge_id']
+            item_path = f'{doc_path}/items/{knowledge}'
+            workbook = load_workbook(BytesIO(exported.content), read_only=True)
+            try:
+                assert workbook.active['A2'].value == knowledge
+            finally:
+                workbook.close()
+            assert call('GET', item_path).json()['item']['text'] == 'Updated invoice reimbursement evidence.'
+            assert call('GET', item_path, params={'version_id': draft}).json()['item']['text'] != 'Updated invoice reimbursement evidence.'
+            assert call('GET', f"{doc_path}/items/{chunks[0]['id']}", params={'version_id': draft}).json()['item']['knowledge_id'] == knowledge
+            modified = call('PATCH', item_path, json={'base_version_id': saved,
+                'topic': 'Invoice evidence', 'text': 'Final invoice reimbursement evidence.', 'enabled': False}).json()
+            assert modified['requires_publish'] and modified['item']['knowledge_id'] == knowledge
+            assert modified['item']['topic'] == 'Invoice evidence' and not modified['item']['enabled']
+            assert search('invoice reimbursement')[0]['text'] == 'Updated invoice reimbursement evidence.'
+            call('PATCH', item_path, 409, json={'base_version_id': saved, 'enabled': True})
+            added = call('POST', doc_path + '/items', 201, json={'base_version_id': modified['version_id'],
+                'source_knowledge_id': knowledge, 'text': 'Keep the invoice with approval.'}).json()
+            added_id = added['item']['knowledge_id']
+            assert added_id != knowledge and added['requires_publish']
+            deleted = call('DELETE', f'{doc_path}/items/{added_id}', params={'base_version_id': added['version_id']}).json()
+            assert deleted['knowledge_id'] == added_id and deleted['requires_publish']
+            call('GET', f'{doc_path}/items/{added_id}', 404)
+            assert call('GET', f'{doc_path}/items/{added_id}', params={'version_id': added['version_id']}).json()['item']['text']
+            enabled = call('PATCH', item_path, json={'base_version_id': deleted['version_id'], 'enabled': True}).json()
+            call('POST', doc_path + '/publish', json={'version_id': enabled['version_id']})
+            assert search('invoice reimbursement')[0]['knowledge_id'] == knowledge
+            assert search('invoice reimbursement')[0]['text'] == 'Final invoice reimbursement evidence.'
 
             read_only = token(client, key(owner, workspace, access='read', all_resources=True))
+            call('PATCH', item_path, 404, headers={'Authorization': f'Bearer {read_only}'},
+                 json={'base_version_id': enabled['version_id'], 'enabled': False})
             call('PATCH', doc_path, 404, headers={'Authorization': f'Bearer {read_only}'}, json={'name': 'Denied'})
             assert call('GET', ext, headers={'Authorization': f'Bearer {read_only}'}).json()['id'] == doc
             client_token = token(client, key(owner, workspace, access='read', resources=[
                 {'kind': 'knowledge_base', 'resource_id': kb, 'access': 'read'}]))
             call('GET', doc_path, 404, headers={'Authorization': f'Bearer {client_token}'})
+            call('GET', item_path, 404, headers={'Authorization': f'Bearer {client_token}'})
             scope = {'workspace_id': workspace, 'access': 'write', 'resources': [
                 {'kind': 'knowledge_base', 'resource_id': kb, 'access': 'write'},
                 {'kind': 'knowledge_document', 'resource_id': doc, 'access': 'write'},
@@ -151,7 +184,7 @@ def check():
                     time.sleep(.05)
                 assert status['status'] == 'succeeded', status
                 assert status['outputs']['text'] == 'synthetic answer'
-    print('PASS published workflow and Agent, knowledge sync, retained originals, concurrent revision guards, search, XLSX and token isolation')
+    print('PASS published workflow and Agent, knowledge sync, per-item revisions, history, search, XLSX and token isolation')
 
 
 if __name__ == '__main__':

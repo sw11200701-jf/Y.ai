@@ -51,11 +51,12 @@ class BatchRevision(StrictModel):
 class ChunkCorrection(StrictModel):
     chunk_id: str
     text: str | None = Field(default=None, min_length=1, max_length=32700)
+    topic: str | None = Field(default=None, max_length=200)
     enabled: bool | None = None
 
     @model_validator(mode="after")
     def has_change(self):
-        if self.text is None and self.enabled is None: raise ValueError("请提供正文或启用状态")
+        if self.text is None and self.topic is None and self.enabled is None: raise ValueError("请提供正文、主题或启用状态")
         return self
 
 class KnowledgeAddition(StrictModel):
@@ -78,11 +79,12 @@ class DocumentRevision(StrictModel):
 class ChunkPatch(StrictModel):
     base_version_id: str
     text: str | None = Field(default=None, min_length=1, max_length=32700)
+    topic: str | None = Field(default=None, max_length=200)
     enabled: bool | None = None
 
     @model_validator(mode="after")
     def has_change(self):
-        if self.text is None and self.enabled is None: raise ValueError("请提供正文或启用状态")
+        if self.text is None and self.topic is None and self.enabled is None: raise ValueError("请提供正文、主题或启用状态")
         return self
 
 class ParseRequest(StrictModel):

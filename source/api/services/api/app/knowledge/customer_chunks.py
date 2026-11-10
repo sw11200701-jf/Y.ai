@@ -1,6 +1,22 @@
 """Read-only customer presentation; original persisted text/evidence untouched."""
 import hashlib,re
 
+
+def exported_id(version_id, sequence):
+    prefix = hashlib.sha256(version_id.encode()).hexdigest()[:8].upper()
+    return f'Y-{prefix}-{sequence:04d}'
+
+
+def knowledge_id(chunk, version_id, sequence):
+    return chunk.get('knowledge_key') or chunk.get('knowledge_id') or exported_id(version_id, sequence)
+
+
+def historical_id(chunk):
+    # Early manual revisions kept the original internal ID instead of its XLSX
+    # alias. Both remain valid lookup keys for the same persisted knowledge.
+    match = re.fullmatch(r'(knowledge_version_[0-9a-f]{32})_chunk_([1-9][0-9]*)', chunk.get('knowledge_key') or '')
+    return exported_id(match[1], int(match[2])) if match else None
+
 def text(chunk):
     value=chunk.get('text','')
     if (not isinstance(value,str) or chunk.get('revised') or not str(chunk.get('unit_id','')).startswith('record_')

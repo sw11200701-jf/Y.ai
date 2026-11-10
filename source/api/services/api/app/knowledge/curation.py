@@ -71,15 +71,19 @@ async def revise(*, document_id, corrections, context, session, base_version_id=
         raise AppError('KNOWLEDGE_SOURCE_REPLACED', '原件已更换，请先处理新原件再修订知识', 409)
     verify(previous, context=context, session=session)
     chunks = deepcopy(previous['chunks']); by_id = {c['id']:c for c in chunks}; seen = set()
+    from .customer_chunks import knowledge_id
+    for index, chunk in enumerate(chunks, 1):
+        chunk['knowledge_key'] = knowledge_id(chunk, head, index)
     for item in corrections:
         cid = item['chunk_id']
         if cid in seen or cid not in by_id or cid in deletions:
             raise AppError('VALIDATION_ERROR', '修订切片重复、已删除或不属于当前版本', 422)
         seen.add(cid); chunk = by_id[cid]
-        for key in ('text','enabled'):
+        for key in ('text','topic','enabled'):
             if item.get(key) is not None: chunk[key] = item[key]
-        if item.get('text') is not None:
-            if not item['text'].strip(): raise AppError('VALIDATION_ERROR', '知识正文不可为空白', 422)
+        if item.get('text') is not None or item.get('topic') is not None:
+            if item.get('text') is not None and not item['text'].strip():
+                raise AppError('VALIDATION_ERROR', '知识正文不可为空白', 422)
             # Never retain a stale machine summary as though it described new text.
             chunk['summary'] = ''
             chunk.pop('semantic_checks', None)
@@ -89,8 +93,7 @@ async def revise(*, document_id, corrections, context, session, base_version_id=
     if len(set(deletions)) != len(deletions) or any(cid not in by_id for cid in deletions):
         raise AppError('VALIDATION_ERROR', '删除切片重复或不属于当前版本', 422)
     chunks = [c for c in chunks if c['id'] not in deletions]
-    for c in chunks:
-        c.setdefault('knowledge_key', c.get('knowledge_id') or c['id'])
+    added_ids = []
     for item in additions:
         if not item['text'].strip(): raise AppError('VALIDATION_ERROR', '新增知识正文不可为空白', 422)
         basis = by_id.get(item['source_chunk_id'])
@@ -103,6 +106,7 @@ async def revise(*, document_id, corrections, context, session, base_version_id=
         c.pop('knowledge_id', None)
         if 'content' in c: c['content'] = c['text']
         chunks.append(c)
+        added_ids.append(c['knowledge_key'])
     if not chunks: raise AppError('VALIDATION_ERROR', '请至少保留一条知识；整份资料可停用或移入回收站', 422)
     if len(chunks) > 5000: raise AppError('VALIDATION_ERROR', '知识数量超过5000条', 422)
     changes = {'operation':'human_revision','corrections':corrections,'additions':list(additions),'deletions':list(deletions),
@@ -118,6 +122,7 @@ async def revise(*, document_id, corrections, context, session, base_version_id=
         'parent_sha256':snapshot(previous),'snapshot_sha256':snapshot(version)})
     session.flush()
     return s.public(version) | {'preview':version['chunks'][:20], 'requires_publish':True,
+        **({'added_knowledge_ids': added_ids} if added_ids else {}),
         'message':'已保存为最新知识版本；发布后用于检索，默认导出包含本次修改'}
 
 def latest_export(*, document_id, expected_version_id, context, session, columns=None):

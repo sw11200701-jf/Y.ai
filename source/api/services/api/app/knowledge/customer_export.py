@@ -1,10 +1,10 @@
 """Three-column semantic customer workbook; reuse every proven provenance export gate."""
 from io import BytesIO
-import hashlib,math,re,json
+import math,re,json
 from openpyxl import Workbook
 from openpyxl.styles import Alignment,Font,PatternFill
 from .chunk_export import export_chunks,_authorized,_row,invalid
-from .customer_chunks import knowledge_content
+from .customer_chunks import knowledge_content,knowledge_id
 from . import service as s
 
 CONTRACT='customer-text-two-columns-v1'
@@ -78,10 +78,10 @@ def export_customer(*,document_id,version_id,context,session,columns=None):
     else:_,metadata=export_chunks(document_id=document_id,version_id=version_id,context=context,session=session)
     fresh=_authorized(document_id,version_id,context,session)
     if s.digest(fresh[1])!=pinned:invalid('导出期间版本已变化')
-    chunks=version['chunks'];prefix='Y-'+hashlib.sha256(version_id.encode()).hexdigest()[:8].upper()
-    identifiers={c['id']:f'{prefix}-{i:04d}' for i,c in enumerate(chunks,1)}
+    chunks=version['chunks']
     wb=Workbook();ws=wb.active;ws.title='知识切片';_row(ws,[COLUMNS[key][0] for key in selected])
-    base_rows=portable_rows if portable else [[chunk.get('knowledge_key') or identifiers[chunk['id']],knowledge_content(chunk)] for chunk in chunks]
+    base_rows=portable_rows if portable else [[knowledge_id(chunk,version_id,i),knowledge_content(chunk)]
+                                             for i,chunk in enumerate(chunks,1)]
     if len(base_rows)!=len(chunks):invalid('完整版本的切片与导出行数不一致')
     for chunk,values in zip(chunks,base_rows):
         record=dict(zip(('knowledge_id','knowledge_content'),values))

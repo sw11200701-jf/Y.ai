@@ -134,6 +134,31 @@ jq -n --arg kb "$KB_ID" --arg query '报销审批要求' '{knowledge_base_ids:[$
 }
 ```
 
+### 单条知识的查询和维护
+
+从切片列表、文档检索结果或 XLSX 的「知识ID」取得 `knowledge_id`，并使用该条知识所属的 `document_id`。文档检索命中的 `resource_id` 是文档 ID。修改同一条知识时，`knowledge_id` 跨人工修订保持一致；`item.id` 是当前版本内的切片 ID。整份重新切片可能产生新的知识条目和标识。
+
+以下路径相对 `/knowledge/documents/{document_id}`。
+
+| 方法与路径 | 请求及结果 |
+| --- | --- |
+| `GET /items/{knowledge_id}` | 读取最新保存版本中的单条知识，返回 `version_id` 和 `item`。传 `version_id` 可读取已发布或指定的历史版本 |
+| `POST /items` | 发送 `base_version_id`、`source_knowledge_id`、`text`，可选 `topic`、`enabled`。基于现有知识的来源新增一条，返回其新 ID |
+| `PATCH /items/{knowledge_id}` | 发送 `base_version_id`，并提供 `text`、`topic` 或 `enabled` 中至少一项。将 `enabled` 设为 `false` 可停用 |
+| `DELETE /items/{knowledge_id}?base_version_id=…` | 从新草稿移除指定知识。已保存的历史版本仍可按版本读取 |
+
+写入需有文档的完整维护权限及创建知识版本的授权。每次写入返回新的 `version_id` 和 `requires_publish: true`。提交过期的 `base_version_id` 返回 `409`。发布新版本后，检索才使用这次修改、启停或删除的结果。文档至少保留一条知识；若整份内容都应退出检索，可停用条目或将文档移入回收站。
+
+```bash
+ITEM="$SPACE/knowledge/documents/$DOCUMENT_ID/items/$KNOWLEDGE_ID"
+VERSION_ID=$(curl --fail-with-body -sS -H "Authorization: Bearer $TOKEN" "$ITEM" |
+  jq -er '.version_id')
+jq -n --arg version "$VERSION_ID" --arg text '更新后的知识正文' \
+  '{base_version_id:$version,text:$text}' |
+  curl --fail-with-body -sS -X PATCH -H "Authorization: Bearer $TOKEN" \
+    -H 'Content-Type: application/json' --data-binary @- "$ITEM"
+```
+
 ## 4. 错误与机器可读文档
 
 接口错误包含 `error.code`、`error.message` 和 `request_id`。排障时保留 `request_id`，超级管理员可在「系统日志」按编号查找已记录的请求。
