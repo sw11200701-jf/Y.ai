@@ -23,7 +23,7 @@ def _target(kind, identifier, context, session):
     return value
 
 
-def _no_processing(kind, value, context, session):
+def _no_processing(kind, value, context, session, *, include_unknown=False):
     # Metadata-only SQL: no model input/response/credentials are materialized.
     from app.execution.models import ExecutionBlob
     document_ids = [value['id']] if kind == 'knowledge_document' else list(session.scalars(
@@ -32,14 +32,17 @@ def _no_processing(kind, value, context, session):
             func.json_extract(Resource.payload, '$.knowledge_base_id') == value['id']))) if kind == 'knowledge_base' else []
     if not document_ids:
         return
+    statuses = ('queued','running','resuming','waiting_approval','paused')
+    if include_unknown:
+        statuses += ('outcome_unknown',)
     active = session.scalar(select(Resource.resource_id).join(ExecutionBlob,
         ExecutionBlob.id == func.json_extract(Resource.payload, '$.semantic_job.plan_ref')).where(
         Resource.kind == 'run', Resource.tenant_id == context.tenant_id,
         Resource.workspace_id == context.workspace_id,
-        func.json_extract(Resource.payload, '$.status').in_(('queued','running','resuming','waiting_approval','paused')),
+        func.json_extract(Resource.payload, '$.status').in_(statuses),
         func.json_extract(ExecutionBlob.payload, '$.plan.document_id').in_(document_ids)).limit(1))
     if active:
-        raise AppError('KNOWLEDGE_PROCESSING', '资料仍在处理中，请结束处理后再删除', 409)
+        raise AppError('KNOWLEDGE_PROCESSING', '资料仍在处理或结果待核查，请先确认任务状态', 409)
 
 
 async def remove(kind, identifier, *, context, session):

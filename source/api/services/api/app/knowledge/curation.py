@@ -67,6 +67,8 @@ async def revise(*, document_id, corrections, context, session, base_version_id=
     if base_version_id != head:
         raise AppError('KNOWLEDGE_REVISION_CONFLICT', '当前知识已更新；请读取最新版本后合并修改，未覆盖已保存知识', 409)
     previous = s.checked_version(head, root, context, session, write=True)
+    if previous["file_id"] != root["file_id"]:
+        raise AppError('KNOWLEDGE_SOURCE_REPLACED', '原件已更换，请先处理新原件再修订知识', 409)
     verify(previous, context=context, session=session)
     chunks = deepcopy(previous['chunks']); by_id = {c['id']:c for c in chunks}; seen = set()
     for item in corrections:

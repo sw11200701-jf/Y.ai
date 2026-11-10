@@ -82,7 +82,7 @@ def _decode_plain_text(content):
         raise AppError("DOCUMENT_ENCODING", "文件包含 NUL 字节，请重新导出为 UTF-8 纯文本。", 422)
     return text
 
-async def import_document(*, filename: str, content: bytes, context: BusinessContext, session: Session, knowledge_base_id=None, profile="legacy") -> dict:
+async def import_document(*, filename: str, content: bytes, context: BusinessContext, session: Session, knowledge_base_id=None, profile="legacy", deduplicate=True) -> dict:
     safe_name = filename.replace("\\", "/").split("/")[-1][:150]
     suffix = PurePath(safe_name).suffix.lower()
     contract = upload_contract(profile)
@@ -107,9 +107,10 @@ async def import_document(*, filename: str, content: bytes, context: BusinessCon
         for _ in cells(content, formats[suffix]):
             pass
     digest = hashlib.sha256(content).hexdigest()
-    for existing in list_resources(session, "document", context):
-        if existing["sha256"] == digest and existing["format"] == formats[suffix] and existing.get("knowledge_base_id") == knowledge_base_id:
-            return public_document(existing) | {"duplicate": True}
+    if deduplicate:
+        for existing in list_resources(session, "document", context):
+            if existing["sha256"] == digest and existing["format"] == formats[suffix] and existing.get("knowledge_base_id") == knowledge_base_id:
+                return public_document(existing) | {"duplicate": True}
     doc = {"id": new_id("document"), "filename": safe_name, "format": formats[suffix], "size_bytes": len(content),
            "sha256": digest, "content_base64": base64.b64encode(content).decode("ascii"), "status": "uploaded",
            "created_at": utc_now(), "synthetic": True, "source_refs": [], "chunk_count": 0}

@@ -87,6 +87,10 @@ def list_children(kind, kb_id, context, session):
 def source_root(file_id, context, session):
     kind = "document" if isinstance(file_id, str) and file_id.startswith("document_") else "knowledge_file"
     file = get_resource(session, kind, file_id, context)
+    if kind == "document" and file.get("knowledge_document_id"):
+        root = entry("knowledge_document", file["knowledge_document_id"], context, session)
+        raw_file({**root, "file_id": file_id}, context, session)
+        return file, "knowledge_document", root
     for root_kind in ("knowledge_document", "knowledge_dataset"):
         for root in list_resources(session, root_kind, context):
             if root.get("file_id") == file_id or (root_kind == "knowledge_dataset" and file_id in root.get("file_ids", [])):
@@ -113,14 +117,20 @@ def authorize_document_file(*, file_id, context, session):
             owned(session, "document", file_id, context)
     return file
 
-async def upload_document(*, kb_id, filename, content, context, session, profile="legacy"):
+async def upload_document(*, kb_id, filename, content, context, session, profile="legacy", deduplicate=True):
     library(kb_id, context, session, write=True)
-    original = await import_document(filename=filename, content=content, knowledge_base_id=kb_id, profile=profile, context=context, session=session)
-    for old in list_resources(session, "knowledge_document", context):
-        if old.get("knowledge_base_id") == kb_id and old["file_id"] == original["id"]:
-            if old["status"] == "deleted":
-                raise AppError("CONFLICT", "相同文件已有删除历史，请修订现有资料或使用新文件", 409)
-            return public(old) | {"duplicate": True}
+    original = await import_document(filename=filename, content=content, knowledge_base_id=kb_id, profile=profile,
+                                     context=context, session=session, deduplicate=deduplicate)
+    if original["duplicate"]:
+        for old in list_resources(session, "knowledge_document", context):
+            if old.get("knowledge_base_id") == kb_id and old["file_id"] == original["id"]:
+                if old["status"] == "deleted":
+                    raise AppError("CONFLICT", "相同文件已有删除历史，请修订现有资料或使用新文件", 409)
+                return public(old) | {"duplicate": True}
+        existing = get_resource(session, "document", original["id"], context)
+        if existing.get("knowledge_document_id"):
+            original = await import_document(filename=filename, content=content, knowledge_base_id=kb_id,
+                                             profile=profile, context=context, session=session, deduplicate=False)
     root = {"id": new_id("knowledge_document"), "knowledge_base_id": kb_id, "file_id": original["id"], "name": original["filename"],
             "status": "uploaded", "created_at": utc_now(), "published_version_id": None, "draft_version_id": None,
             "data_policy_generation": 2, "overview": {"topic": "", "subject": "", "period": "", "summary": ""}}
@@ -167,6 +177,9 @@ def make_document_version(root, chunks, parent, context, session, changes, warni
 async def parse_document(*, document_id, context, session, chunk_size=1000, chunk_overlap=100, strategy="length"):
     root = entry("knowledge_document", document_id, context, session, write=True)
     require_full_document_maintenance(root, context, session)
+    from .curation import lock_document
+    lock_document(session, context, document_id)
+    root = entry("knowledge_document", document_id, context, session, write=True)
     file = raw_file(root, context, session)
     try:
         content = base64.b64decode(file["content_base64"], validate=True)
@@ -225,6 +238,8 @@ async def publish_document(*, document_id, version_id, context, session):
     if version_id != (root.get('draft_version_id') or root.get('published_version_id')):
         raise AppError('KNOWLEDGE_REVISION_CONFLICT', '请发布最新保存的知识版本', 409)
     version = checked_version(version_id, root, context, session, write=True)
+    if version["file_id"] != root["file_id"]:
+        raise AppError('KNOWLEDGE_SOURCE_REPLACED', '原件已更换，请先处理新原件再发布', 409)
     if version["status"] not in ("validated", "published") or version["errors"]:
         raise AppError("QUALITY_FAILED", "错误版本不得发布")
     version.update(status="published", published_at=utc_now())
@@ -519,9 +534,11 @@ async def search_knowledge(*, query, knowledge_base_ids, context, session, file_
             raise AppError("VALIDATION_ERROR", f"{label}须为1..20个不重复ID")
     if type(top_k) is not int or not 1 <= top_k <= 20: raise AppError("VALIDATION_ERROR", "top_k须为1..20")
     for kb_id in knowledge_base_ids: library(kb_id, context, session)
+    file_roots = set()
     for file_id in file_ids or []:
         _, _, root = source_root(file_id, context, session)
         if root["knowledge_base_id"] not in knowledge_base_ids: missing()
+        file_roots.add(root["id"])
     selected = []
     if version_ids:
         for vid in version_ids:
@@ -533,7 +550,7 @@ async def search_knowledge(*, query, knowledge_base_ids, context, session, file_
         for kind in ("knowledge_document", "knowledge_dataset"):
             for root in list_resources(session, kind, context):
                 if root["knowledge_base_id"] not in knowledge_base_ids or root["status"] != "published": continue
-                if file_ids and root.get("file_id") not in file_ids and not set(root.get("file_ids", [])) & set(file_ids): continue
+                if file_ids and root["id"] not in file_roots: continue
                 try:
                     selected_version = published_version(root, context, session)
                     if file_ids and selected_version["file_id"] not in file_ids:

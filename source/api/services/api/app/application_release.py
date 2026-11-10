@@ -90,6 +90,11 @@ def prepare_release(session,context,source,runtime_policy,permission='applicatio
             else:roots=[source_root(identifier,context,session)[2]]
             for root in roots:
                 version=published_version(root,context,session)
+                if not identifier.startswith('knowledge_base_') and version['file_id']!=identifier:
+                    matching=[item for item in list_resources(session,'knowledge_version',context)
+                              if item['resource_id']==root['id'] and item['file_id']==identifier and item['status']=='published']
+                    if not matching:raise AppError('APP_DEPENDENCY_INVALID','所选原件没有已发布知识版本',422)
+                    version=published_version(root,context,session,max(matching,key=lambda item:item.get('published_at',''))['id'])
                 dependency('knowledge_version',version['id'])
                 pin={'file_id':version['file_id'],'knowledge_base_id':root['knowledge_base_id'],'version_id':version['id']}
                 if pin not in pins:pins.append(pin)

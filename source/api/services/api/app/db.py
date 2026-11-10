@@ -170,6 +170,7 @@ def save_resource(session: Session, kind: str, resource_id: str, payload: dict, 
     from app.execution.builtin_agents import protect_resource
     protect_resource(kind,resource_id,payload)
     row = session.scalar(select(Resource).where(Resource.kind==kind,Resource.resource_id==resource_id,Resource.tenant_id==context.tenant_id,Resource.workspace_id==context.workspace_id))
+    created = row is None
     from app.data_access import DATA_KINDS,authorize_data_resource
     if row is not None and kind in DATA_KINDS:
         authorize_data_resource(session=session,context=context,kind=kind,resource_id=resource_id,action="maintain")
@@ -208,7 +209,7 @@ def save_resource(session: Session, kind: str, resource_id: str, payload: dict, 
                 bump_policy_version(session,context)
         row.payload, row.updated_at = value, utc_now()
     session.flush()
-    if getattr(context,"principal_type","human")=="platform":
+    if created and getattr(context,"principal_type","human")=="platform":
         from app.platform_api import bind_created
         bind_created(session,context,row)
     if getattr(context,"principal_type","human")=="service":

@@ -355,9 +355,21 @@ class RuntimeBodyLimitMiddleware:
     """ASGI receive cap also covers chunked multipart before a handler writes."""
     def __init__(self,app):self.app=app
     async def __call__(self,scope,receive,send):
-        if scope['type']!='http' or not is_open_path(scope.get('path','')):return await self.app(scope,receive,send)
+        path=scope.get('path','')
+        parts=path.strip('/').split('/')
+        knowledge_upload=(
+            len(parts)>6 and parts[:4]==['api','platform','v1','spaces']
+            and (scope.get('method')=='POST' and parts[5]=='knowledge-bases' and parts[7:]==['documents']
+                or scope.get('method')=='PUT' and parts[5]=='knowledge-bases' and parts[7:9]==['documents','by-external-id']
+                or scope.get('method')=='PUT' and parts[5:7]==['knowledge','documents'] and parts[8:]==['original'])
+        )
+        if scope['type']!='http' or not (is_open_path(path) or knowledge_upload):return await self.app(scope,receive,send)
         from starlette.responses import JSONResponse
-        maximum=10*1024*1024+65536 if scope.get('path')=='/api/open/v1/files' else 262144
+        if knowledge_upload:
+            from app.knowledge.slicing_parser import MAX_FILE_BYTES
+            maximum=MAX_FILE_BYTES+65536
+        else:
+            maximum=10*1024*1024+65536 if path=='/api/open/v1/files' else 262144
         class Limit(Exception):pass
         received=0;started=False
         async def bounded():

@@ -4,21 +4,9 @@ from app.db import get_session, get_resource
 from app.errors import AppError
 from app.platform_api import runtime, platform_context, require_token_resource, _row, metadata, allowed
 from app.knowledge.database_schemas import DatabaseWrite, TableQuery
-from app.knowledge.schemas import LibraryWrite
 
 def context(request,session,workspace_id):
     return platform_context(session,request.state.platform_token_id,workspace_id)
-
-@runtime.post('/spaces/{workspace_id}/knowledge-bases',status_code=201)
-async def create_library(workspace_id:str,body:LibraryWrite,request:Request,session=Depends(get_session)):
-    from app.knowledge.service import create_library
-    return await create_library(**body.model_dump(),context=context(request,session,workspace_id),session=session)
-
-@runtime.post('/spaces/{workspace_id}/knowledge-bases/{kb_id}/documents',status_code=201)
-async def upload_document(workspace_id:str,kb_id:str,request:Request,file:UploadFile=File(...),session=Depends(get_session)):
-    from app.knowledge.service import upload_document
-    return await upload_document(kb_id=kb_id,filename=file.filename or 'upload.txt',content=await file.read(5*1024*1024+1),
-        context=context(request,session,workspace_id),session=session)
 
 @runtime.get('/spaces/{workspace_id}/resources/{kind}/{identifier}')
 def detail(workspace_id:str,kind:str,identifier:str,request:Request,session=Depends(get_session)):

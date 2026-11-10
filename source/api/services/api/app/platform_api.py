@@ -66,6 +66,12 @@ class KeyWrite(Strict):
 class Exchange(Strict):
  api_key:SecretStr=Field(min_length=16,max_length=256)
  workspace_ids:list[str]|None=Field(default=None,min_length=1,max_length=32)
+class TokenReceipt(Strict):
+ access_token:str
+ token_type:str
+ expires_in:int
+ expires_at:str
+ workspace_ids:list[str]
 class SpaceWrite(Strict):name:str=Field(min_length=1,max_length=100)
 class MemberWrite(Strict):
  user_id:str=Field(min_length=1,max_length=100)
@@ -354,10 +360,17 @@ def authorize_save(session,context,kind,identifier,row,payload):
   if 'resources.execute' not in permissions:raise AppError('EXECUTE_DENIED','没有执行授权',403)
   if kind=='agent_version' and payload.get('status')!='run_snapshot':raise AppError('PLATFORM_WRITE_DENIED','只能创建执行快照',403)
   return
- if kind not in {'attachment','document','knowledge_base','knowledge_document','knowledge_file','database','data_table','data_table_version','data_file','data_batch'} or not(old['allow_create'] and current['allow_create'] and old['access']=='write' and current['access']=='write'):
+ if kind not in {'attachment','document','knowledge_base','knowledge_document','knowledge_version','knowledge_file','database','data_table','data_table_version','data_file','data_batch'} or not(old['allow_create'] and current['allow_create'] and old['access']=='write' and current['access']=='write'):
   raise AppError('PLATFORM_WRITE_DENIED','没有上传或创建此资源的授权',403)
  needed={'page.database'} if kind.startswith(('data_','database')) else {'page.knowledge','page.ai','page.workbench'}
  if not needed&permissions:raise AppError('PERMISSION_DENIED','账号没有相应资源功能权限',403)
+ if kind=='knowledge_version':
+  parent=_row(session,'knowledge_document',payload.get('resource_id'),context.tenant_id,context.workspace_id)
+  if (not parent or payload.get('resource_kind')!='knowledge_document'
+      or payload.get('knowledge_base_id')!=_value(parent).get('knowledge_base_id')
+      or payload.get('file_id')!=_value(parent).get('file_id')):
+   raise AppError('PLATFORM_WRITE_DENIED','知识版本须属于当前文档和原件',403)
+  require_token_resource(session,context,parent,'write')
 
 def bind_created(session,context,row):
  identifier=digest(row.kind+'|'+row.resource_id+'|'+context.operator_id)
@@ -402,7 +415,7 @@ def bind_request(request,session):
  parts=request.url.path.strip('/').split('/')
  if len(parts)>4 and parts[3]=='spaces':current_scope(session,identifier,parts[4])
 
-@runtime.post('/token')
+@runtime.post('/token',response_model=TokenReceipt,summary='交换平台短令牌')
 def exchange(body:Exchange,session=Depends(get_session)):return _exchange(session,body)
 @runtime.post('/token/revoke')
 def revoke_token(request:Request,session=Depends(get_session)):

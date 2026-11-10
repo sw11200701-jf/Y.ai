@@ -35,6 +35,8 @@ docker compose down
 
 ## 验证
 
+平台密钥、工作流与 Agent 调用、知识库同步和错误处理见 [平台 API v1](source/api/contracts/platform-api.md)。控制台「平台 API 与空间」提供当前版本的 OpenAPI JSON 下载。
+
 Docker 构建时运行前端工作台测试和 Next.js 构建。服务启动后，可以使用 Python 3 运行只读冒烟检查。
 
 ```bash

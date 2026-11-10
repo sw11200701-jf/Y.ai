@@ -26,6 +26,16 @@ class Invocation(Strict):
     prompt: str = Field(default='', max_length=20000)
     message: MessageEnvelope | None = None
 
+
+class PublicationResult(Strict):
+    run_id: str
+    publication_id: str
+    status: str
+    result_url: str
+    outputs: dict | None = None
+    error: dict | None = None
+    replayed: bool | None = None
+
 def config_id(kind, identifier):return digest(kind+'|'+identifier)
 
 def _asset(request, session, kind, identifier, write=False):
@@ -138,7 +148,8 @@ def publication_detail(workspace_id:str,publication_id:str,request:Request,sessi
     authorized_publication(session,context,publication_id,execute=False)
     return publication_summary(_row(session,'platform_publication',publication_id,context.tenant_id,context.workspace_id))
 
-@runtime.post('/spaces/{workspace_id}/publications/{publication_id}/invoke',status_code=202)
+@runtime.post('/spaces/{workspace_id}/publications/{publication_id}/invoke',status_code=202,
+    response_model=PublicationResult,response_model_exclude_unset=True,summary='提交已发布工作流或 Agent')
 async def invoke(workspace_id:str,publication_id:str,body:Invocation,request:Request,idempotency_key:str=Header(alias='Idempotency-Key')):
     from app.runner.service import scheduler
     from app.contracts import RunCreate, WorkflowDefinition
@@ -179,7 +190,8 @@ def _admit(token_id,workspace_id,publication_id,body,idempotency_key):
         result=project_result(session,context,run);session.commit()
     return {**result,'replayed':False},run['id'],context
 
-@runtime.get('/spaces/{workspace_id}/runs/{run_id}')
+@runtime.get('/spaces/{workspace_id}/runs/{run_id}',response_model=PublicationResult,
+    response_model_exclude_unset=True,summary='查询平台运行状态与发布结果')
 def result(workspace_id:str,run_id:str,request:Request,session=Depends(get_session)):
     context=platform_context(session,request.state.platform_token_id,workspace_id)
     row=_row(session,'platform_run_authorization',run_id,context.tenant_id,context.workspace_id)

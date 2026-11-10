@@ -192,6 +192,7 @@ def validate_completed_csv_target(session, context, target):
     try:
         payload = json.loads(target.payload)
         if target.kind == 'artifact' and payload.get('artifact_kind') != 'knowledge_csv': return None
+        if target.kind == 'run' and not payload.get('knowledge_csv_artifact_ids'): return None
         run_id = target.resource_id if target.kind == 'run' else payload['run_id']
         row = session.scalar(select(Resource).where(Resource.kind == 'run', Resource.resource_id == run_id,
             Resource.tenant_id == context.tenant_id, Resource.workspace_id == context.workspace_id, Resource.owner_id == context.operator_id))
