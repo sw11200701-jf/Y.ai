@@ -146,6 +146,10 @@ def _resource_query(session, kind, resource_id, context, access="read"):
     q = select(Resource).where(Resource.kind == kind, Resource.tenant_id == context.tenant_id, Resource.workspace_id == context.workspace_id)
     if not (context.principal_type=='platform' and kind in {'run','dataset','artifact','report_result','agent_version','model_configuration','model_provider'}):
         q=q.where(expression(session,subject,kind,access))
+    elif kind=='agent_version':
+        from sqlalchemy import true
+        from app.asset_publication import filter_access
+        q=q.where(filter_access(session,subject,kind,access,true()))
     if context.principal_type=='platform':
         from app.platform_api import token_expression
         q=q.where(token_expression(session,context,kind,access))
@@ -242,7 +246,8 @@ def get_resource(session: Session, kind: str, resource_id: str, context: Busines
     if kind in ("run","dataset","artifact","attachment"):
         from app.data_access import require_derivation_access
         require_derivation_access(session=session,context=context,kind=kind,resource_id=resource_id,completed_read=(access=="read"))
-    return json.loads(row.payload)
+    from app.asset_publication import view_payload
+    return view_payload(session,context,row,json.loads(row.payload))
 
 def list_resources(session: Session, kind: str, context: BusinessContext):
     from app.auth import validate_context
@@ -277,7 +282,8 @@ def list_resources(session: Session, kind: str, context: BusinessContext):
             except AppError as exc:
                 if exc.status_code==404:continue
                 raise
-        result.append(json.loads(row.payload))
+        from app.asset_publication import view_payload
+        result.append(view_payload(session,context,row,json.loads(row.payload)))
     return result
 
 def require_resource_access(session,kind,resource_id,context,permission="read"):

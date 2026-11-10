@@ -133,6 +133,8 @@ loaded_modules = []
 app.include_router(auth_router,prefix="/api/v1")
 from app.asset_archive import router as asset_archive_router
 app.include_router(asset_archive_router,prefix="/api/v1")
+from app.asset_publication import router as asset_publication_router
+app.include_router(asset_publication_router,prefix="/api/v1")
 from app.workspace_logs import router as workspace_logs_router
 app.include_router(workspace_logs_router,prefix="/api/v1")
 from app.tool_egress import router as tool_egress_router

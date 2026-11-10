@@ -1,5 +1,6 @@
 import type {Json} from './api';
-export function conversationChoices(items:Json[]):Json[]{return items.filter(item=>item.conversation_ready===true&&typeof item.conversation_version_id==='string'&&item.configuration_status!=='unsupported_legacy_skill_bindings'&&!item.builtin&&!item.main_workflow_id);}
+export function conversationChoices(items:Json[]):Json[]{return items.filter(item=>item.conversation_ready===true&&
+ (item.kind==='workflow'||typeof item.conversation_version_id==='string')&&item.configuration_status!=='unsupported_legacy_skill_bindings'&&!item.builtin);}
 
 export function conversationScope(user:Json):string{return `zhangpu:conversation-choice:v1:${JSON.stringify([user.tenant_id||'',user.workspace_id||'',user.id||''])}`;}
 export function chooseConversation(items:Json[],preferred?:string|null):string|undefined {const available=conversationChoices(items);return available.find(item=>item.id===preferred)?.id||available[0]?.id;}

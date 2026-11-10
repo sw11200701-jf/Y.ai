@@ -70,8 +70,9 @@ def create_node_draft(body:NodeDraftCreate,context:BusinessContext=Depends(get_c
 def workflows(session: Session = Depends(get_session), context: BusinessContext = Depends(get_context)):
     from app.execution.node_settings import view
     from app.resource_policy import directory
-    safe=directory(session,context,'workflow');access={item['id']:item['access'] for item in safe}
-    full=[{**view(item),'access':access.get(item['id'],{})} for item in list_resources(session,'workflow',context)]
+    safe=directory(session,context,'workflow');metadata={item['id']:item for item in safe}
+    full=[{**view(item),'access':metadata[item['id']]['access'],'publication':metadata[item['id']]['publication']}
+        for item in list_resources(session,'workflow',context) if item['id'] in metadata]
     ids={item['id'] for item in full}
     return {'items':full+[item for item in safe if item['id'] not in ids]}
 
@@ -97,7 +98,15 @@ def save_workflow(body: WorkflowDefinition, context: BusinessContext = Depends(g
 def workflow_detail(workflow_id: str, session: Session = Depends(get_session), context: BusinessContext = Depends(get_context)):
     from app.execution.node_settings import view
     from app.resource_policy import capabilities
-    return {**view(get_resource(session,"workflow",workflow_id,context)),"access":capabilities(session,context,"workflow",workflow_id)}
+    from app.asset_publication import scope_for
+    return {**view(get_resource(session,"workflow",workflow_id,context)),"access":capabilities(session,context,"workflow",workflow_id),
+        "publication":scope_for(session,context,"workflow",workflow_id)}
+
+from app.asset_publication import WorkflowPublish
+@router.post("/workflows/{workflow_id}/publish",status_code=201)
+def publish_workflow(workflow_id: str, body: WorkflowPublish, session: Session = Depends(get_session), context: BusinessContext = Depends(get_context)):
+    from app.asset_publication import publish_workflow as publish
+    return publish(session,context,workflow_id,body)
 
 @router.put("/workflows/{workflow_id}")
 def update_workflow(workflow_id: str, body: WorkflowDefinition, if_match: str | None = Header(None), context: BusinessContext = Depends(get_context)):

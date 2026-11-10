@@ -15,6 +15,7 @@ from .types import agent_type, agent_view, validate_type
 from app.plugins.permissions import require_page
 from app.errors import AppError
 from app.plugins.validation import ValidationRoute
+from app.asset_publication import Audience, scope_for
 
 router = APIRouter(tags=["agents"], route_class=ValidationRoute)
 _publish_lock = RLock()
@@ -54,7 +55,8 @@ def agent_capabilities(session: Session = Depends(get_session,scope='function'),
 @router.get("/agents/{agent_id}")
 def get(agent_id: str, session: Session = Depends(get_session, scope="function"), context: BusinessContext = Depends(get_context)):
     from app.resource_policy import capabilities
-    return {**agent_view(get_resource(session,"agent",agent_id,context)),"access":capabilities(session,context,"agent",agent_id)}
+    return {**agent_view(get_resource(session,"agent",agent_id,context)),"access":capabilities(session,context,"agent",agent_id),
+        "publication":scope_for(session,context,"agent",agent_id)}
 
 
 @router.put("/agents/{agent_id}")
@@ -95,10 +97,18 @@ def bind_workflow(agent_id: str, data: MainWorkflow, session: Session = Depends(
     return proposed
 
 
+class LegacyPublish(StrictModel):
+    """Existing integrations may still send an empty body."""
+
+
 @router.post("/agents/{agent_id}/publish", status_code=201)
-def publish(agent_id: str, session: Session = Depends(get_session, scope="function"), context: BusinessContext = Depends(get_context)):
+def publish(agent_id: str, audience: Audience | LegacyPublish | None = None,
+            session: Session = Depends(get_session, scope="function"), context: BusinessContext = Depends(get_context)):
+    from app.platform_api import write_lock
     with _publish_lock:
-        result = publish_agent(agent_id=agent_id, context=context, session=session)
+        write_lock(session)
+        result = publish_agent(agent_id=agent_id, audience=audience if isinstance(audience, Audience) else None,
+            context=context, session=session)
         session.commit()
         return result
 

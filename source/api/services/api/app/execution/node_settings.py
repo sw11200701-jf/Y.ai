@@ -8,7 +8,7 @@ from app.errors import AppError
 from app.execution.storage import encode
 from app.runner.validation import validate_workflow
 
-TRANSPORT={'graph_sha256','expected_graph_sha256'}
+TRANSPORT={'graph_sha256','expected_graph_sha256','publication','access','metadata_only'}
 def clean(value):return {k:deepcopy(v) for k,v in value.items() if k not in TRANSPORT}
 def revision(value):return hashlib.sha256(encode(clean(value)).encode()).hexdigest()
 def view(value):return clean(value)|{'graph_sha256':revision(value)}

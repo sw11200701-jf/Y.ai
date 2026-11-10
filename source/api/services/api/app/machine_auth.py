@@ -143,6 +143,8 @@ def resource_granted(session,row,context,action='use'):
     authority=current_authority(session,context)
     row=session.scalar(select(Resource).where(Resource.id==row.id).execution_options(populate_existing=True))
     if row is None or (row.tenant_id,row.workspace_id)!=(context.tenant_id,context.workspace_id):return False
+    from app.asset_publication import state as workspace_publication
+    if workspace_publication(session,row) is not None:return False
     state=json.loads(row.payload)
     if state.get('status') in {'disabled','deleted','archived'} or state.get('enabled') is False or state.get('active') is False:return False
     if validate_owned_resource(session,row,context):return True

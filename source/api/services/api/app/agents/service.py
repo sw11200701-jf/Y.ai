@@ -60,6 +60,8 @@ def save_agent(data: AgentWrite, context: BusinessContext, session: Session, age
 def get_agent_config(*, agent_id, context, session, agent_version_id=None):
     require_ai_access(context, session)
     get_resource(session, "agent", agent_id, context)
+    from app.asset_publication import execution_version
+    agent_version_id = execution_version(session, context, agent_id, agent_version_id)
     if agent_version_id:
         version = get_resource(session, "agent_version", agent_version_id, context)
         if version["agent_id"] != agent_id or version.get("status") not in {"published", "run_snapshot"}:
@@ -82,10 +84,23 @@ def get_agent_config(*, agent_id, context, session, agent_version_id=None):
     return result
 
 
-def publish_agent(*, agent_id, context, session):
+def publish_agent(*, agent_id, context, session, audience=None):
+    from app import asset_publication as sharing
     require_page(context, session, "page.ai")
     get_resource(session, "agent", agent_id, context, access="write")
-    config = get_agent_config(agent_id=agent_id, context=context, session=session)
+    row = sharing.asset_row(session, "agent", agent_id, context.tenant_id, context.workspace_id)
+    current = sharing.state(session, row)
+    if audience is None and current:
+        audience = sharing.Audience.model_validate({key: current[key] for key in ("visibility", "user_ids", "role_ids")} |
+            {"expected_revision": current["revision"]})
+    if audience is not None:
+        current = sharing.prepare(session, context, row, audience)
+    # Publishing always validates the owner's current draft.
+    config = get_resource(session, "agent", agent_id, context, access="write")
+    from .document_bindings import authorize_config
+    from .skill_bindings import resolve_guidance
+    authorize_config(config,context=context,session=session)
+    resolve_guidance(config,context=context,session=session)
     validate_type(config, executing=True)
     snapshot, workflow_bindings = workflow_snapshot(config, context, session)
     prepare_tools(config, context, session)
@@ -105,9 +120,20 @@ def publish_agent(*, agent_id, context, session):
     result = {"id": new_id("av"), "agent_id": agent_id, "version": max((v["version"] for v in versions), default=0) + 1,
               "name": config["name"], "status": "published", "config": deepcopy(config), "created_at": utc_now()}
     if snapshot is not None:
+        if audience is not None:
+            sharing.pin_agents(session, context, snapshot)
         result.update(workflow_snapshot=snapshot, tool_bindings=workflow_bindings)
-    save_resource(session, "agent_version", result["id"], result, context)
+        if audience is not None:
+            workflow = sharing.asset_row(session, "workflow", config["main_workflow_id"], context.tenant_id, context.workspace_id)
+            sharing.require_owner(context, workflow)
+            previous = sharing.state(session, workflow)
+            sharing.record(session, context, workflow, audience, previous,
+                version=(previous["version"] if previous else 0) + 1, workflow=snapshot, linked_agent_id=agent_id)
+    version_payload = {**result, "workspace_audience": sharing.audience_fields(audience)} if audience is not None else result
+    save_resource(session, "agent_version", result["id"], version_payload, context)
     save_resource(session, "agent", agent_id, {**config, "status": "published", "latest_version": result["version"], "updated_at": utc_now()}, context)
+    if audience is not None:
+        result["publication"] = sharing.record(session, context, row, audience, current, version=result["version"], agent_version_id=result["id"])
     return result
 
 
@@ -161,8 +187,14 @@ def list_conversations(*, context, session):
     items = []
     for agent in list_resources(session, "agent", context):
         version = latest.get(agent["id"])
+        if version and version.get("workflow_snapshot"):
+            snapshot = version["workflow_snapshot"]
+            items.append({"id": agent["id"], "name": version["name"], "kind": "agent", "workflow_agent": True,
+                "conversation_ready": True, "conversation_version_id": version["id"], "input_schema": snapshot.get("input_schema"),
+                "access": {"execute": True}})
+            continue
         model = _conversation_model(version)
-        if not model or agent.get("main_workflow_id") or agent.get("skill_bindings"):
+        if not model:
             continue
         try:
             load_config(model, context=context, session=session,
@@ -171,8 +203,19 @@ def list_conversations(*, context, session):
             if error.status_code >= 500:
                 raise
             continue
-        items.append({"id": agent["id"], "name": agent["name"], "conversation_ready": True,
-                      "conversation_version_id": version["id"], "access": {"execute": True}})
+        items.append({"id": agent["id"], "name": version["name"], "kind":"agent", "conversation_ready": True,
+                      "conversation_version_id": version["id"], "input_schema":version["config"].get("input_schema"),
+                      "access": {"execute": True}})
+    from app.asset_publication import asset_row, state
+    for workflow in directory(session, context, "workflow"):
+        if not workflow["access"]["execute"] or workflow["publication"]["visibility"] == "legacy":
+            continue
+        row = asset_row(session, "workflow", workflow["id"], context.tenant_id, context.workspace_id)
+        published = state(session, row)
+        if published and not published.get("linked_agent_id"):
+            snapshot = published["workflow"]
+            items.append({"id": workflow["id"], "name": snapshot["name"], "kind": "workflow", "conversation_ready": True,
+                "input_schema": snapshot.get("input_schema"), "access": {"execute": True}})
     return {"items": items}
 
 
@@ -193,8 +236,10 @@ def list_agents(*, context, session, page=1, page_size=20, q="", status=""):
                       "reference_count": len(references.get(agent["id"], [])),
                       "model_configuration": model_status(context=context, session=session, config_id=agent.get("model_config_id")) if agent.get("planner_mode") == "model" else {"configured": False, "default_mode": "model"}})
     full_ids={item['id'] for item in items}
-    access_by_id={item['id']:item['access'] for item in directory_items}
-    for item in items:item['access']=access_by_id.get(item['id'],{})
+    directory_by_id={item['id']:item for item in directory_items}
+    for item in items:
+        metadata = directory_by_id.get(item["id"], {})
+        item.update(access=metadata.get("access", {}), publication=metadata.get("publication"))
     items.extend(item for item in directory_items if item['id'] not in full_ids)
     return paginate(items, page=page, page_size=page_size, q=q, status=status)
 

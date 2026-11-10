@@ -14,6 +14,8 @@ export const workflowApi = {
   tableDictionary: (tableId: string, versionId?: string) => read<Record<string, any>>(`/database/tables/${encodeURIComponent(tableId)}/dictionary${versionId ? `?version_id=${encodeURIComponent(versionId)}` : ''}`),
   validate: (workflow: WorkflowDefinition) => send('/workflows/validate', workflow),
   save: (workflow: WorkflowDefinition) => send<WorkflowDefinition>(workflow.id ? `/workflows/${encodeURIComponent(workflow.id)}` : '/workflows', workflow, workflow.id ? 'PUT' : 'POST'),
+  publish: (id: string, audience: import('../../components/asset-publication').Audience, expected_graph_sha256: string) =>
+    send<import('../../components/asset-publication').Publication>(`/workflows/${encodeURIComponent(id)}/publish`, {...audience, expected_graph_sha256}),
   run: (workflow: WorkflowDefinition, inputs: Record<string, any>, query: Record<string, any>, prompt: string) => send<StudioRun>('/runs', { workflow, inputs, query, prompt }),
   debugRun: (draft: DebugRunRequest) => send<StudioRun>('/workflows/debug-runs', draft),
   debugTarget: (workflow: WorkflowDefinition, node_id: string, scope_path: string[] = []) => send<DebugTarget>('/workflows/debug-target', { workflow, node_id, scope_path }),

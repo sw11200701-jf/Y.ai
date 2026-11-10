@@ -96,8 +96,8 @@ def authorize_dependencies(session, context, run, *, models=False, execute=False
     if getattr(context,'principal_type','human')=='service':
         from app.machine_auth import assert_release_dependencies
         assert_release_dependencies(session,context,execute=execute)
-    from app.resource_policy import require_execute
-    if execute:require_execute(session,context)
+    from app.resource_policy import require_execute, require_run_entry
+    if execute:require_run_entry(session,context,run.get("request",{}))
     from app.db import get_resource
     from app.contracts import ToolBinding
     from app.reporting.document_artifacts import authorize_run_outputs

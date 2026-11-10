@@ -47,5 +47,7 @@ export type WorkflowStudioProps = {
   canManageModels?: boolean;
   /** Supplied by an authorized host; opens API management for a saved asset, without publishing. */
   onOpenApplicationApi?: (source: import('../application-api-presentation').ApplicationAssetSelection) => void | Promise<void>;
-  onPublish?: () => Promise<unknown>; onNavigate?: (page: string) => void | Promise<void>;
+  onPublish?: (audience: import('../../components/asset-publication').Audience) => Promise<unknown>;
+  onPublished?: () => void;
+  onNavigate?: (page: string) => void | Promise<void>;
 };

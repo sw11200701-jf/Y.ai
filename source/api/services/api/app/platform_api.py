@@ -274,6 +274,9 @@ def source_access(session,user,workspace_id,row,access):
   return any(_value(model).get('provider_id')==row.resource_id and source_access(session,subject,workspace_id,model,'read') for model in session.scalars(select(Resource).where(Resource.kind=='model_configuration',Resource.tenant_id==user.tenant_id,Resource.workspace_id==workspace_id)))
  page={'page.database'} if row.kind in {'database','data_table','data_table_version','data_batch','data_file'} else {'page.ai','page.workbench'} if row.kind in {'agent','agent_version','workflow'} else {'page.knowledge','page.ai','page.workbench'}
  if not page&permissions:return False
+ from app.asset_publication import override
+ sharing=override(session,user,row)
+ if sharing is not None:return sharing and access!='write'
  from app.data_access import DATA_KINDS,_authorize_subject_resource
  if row.kind in DATA_KINDS and access!='view':
   subject=space_subject(session,user,workspace_id)

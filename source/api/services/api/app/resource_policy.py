@@ -3,7 +3,7 @@ import json
 from types import SimpleNamespace
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select, or_, and_, exists, false
+from sqlalchemy import select, or_, and_, exists, false, true
 from app.db import Resource, get_session, utc_now
 from app.auth_models import ResourceGrant
 from app.errors import AppError
@@ -47,6 +47,10 @@ def policies(session, subject):
     return result
 
 def role_access(session, subject, row):
+    from app.asset_publication import override
+    shared = override(session, subject, row)
+    if shared is not None:
+        return (2, True) if shared else (0, False)
     if row.kind not in KINDS:return (3 if row.owner_id==subject.id else 0, False)
     level=0; execute=False
     for policy in policies(session,subject):
@@ -61,28 +65,43 @@ def role_access(session, subject, row):
 
 def access_level(session, subject, row):
     if (row.tenant_id,row.workspace_id)!=(subject.tenant_id,subject.workspace_id):return 0
+    from app.asset_publication import override
+    shared = override(session, subject, row)
+    if shared is not None:
+        return 2 if shared else 0
     level,_=role_access(session,subject,row)
     grant=session.scalar(select(ResourceGrant).where(ResourceGrant.resource_pk==row.id,ResourceGrant.user_id==subject.id))
     return max(level,LEVELS.get(grant.permission,0) if grant else 0)
 
 def expression(session, subject, kind, access='read'):
+    from app.asset_publication import filter_access
     needed=LEVELS[access]; conditions=[]
     for policy in policies(session,subject):
         if kind not in KINDS or LEVELS[policy.owned_access]>=needed:conditions.append(Resource.owner_id==subject.id)
         if kind in KINDS:
-            if LEVELS[policy.workspace_access]>=needed:return Resource.id!=None
+            if LEVELS[policy.workspace_access]>=needed:
+                return filter_access(session,subject,kind,access,true())
             ids=[s.resource_id for s in policy.resources if s.kind==kind and LEVELS[s.access]>=needed]
             if ids:conditions.append(Resource.resource_id.in_(ids))
     levels=[level for level,value in LEVELS.items() if value>=needed]
     conditions.append(exists().where(ResourceGrant.resource_pk==Resource.id,ResourceGrant.user_id==subject.id,ResourceGrant.permission.in_(levels)))
-    return or_(*conditions) if conditions else false()
+    return filter_access(session,subject,kind,access,or_(*conditions) if conditions else false())
+
+def executable(session,context,subject,row):
+    from app.asset_publication import state
+    allowed=role_access(session,subject,row)[1]
+    if 'resources.execute' in context.permissions:
+        return allowed
+    return bool(context.principal_type=='human' and row.kind in {'agent','workflow'} and allowed and
+        {'page.ai','page.workbench'} & set(context.permissions) and state(session,row))
 
 def require_execute(session, context, kind=None, resource_id=None):
     from app.auth import validate_context
     subject=validate_context(context,session)
     if context.principal_type=='service':return  # Legacy application authority has independent invoke scopes.
-    if 'resources.execute' not in context.permissions:raise AppError('EXECUTE_DENIED','没有执行授权',403)
-    if kind is None:return
+    if kind is None:
+        if 'resources.execute' not in context.permissions:raise AppError('EXECUTE_DENIED','没有执行授权',403)
+        return
     from app.asset_archive import live_asset
     row=session.scalar(select(Resource).where(Resource.kind==kind,Resource.resource_id==resource_id,
         Resource.tenant_id==context.tenant_id,Resource.workspace_id==context.workspace_id,live_asset(kind)))
@@ -91,10 +110,21 @@ def require_execute(session, context, kind=None, resource_id=None):
         from app.platform_api import require_token_resource
         require_token_resource(session,context,row,'execute')
         return
-    if not role_access(session,subject,row)[1]:raise AppError('EXECUTE_DENIED','此资源未授予执行权限',403)
+    if not executable(session,context,subject,row):raise AppError('EXECUTE_DENIED','此资源未授予执行权限',403)
+
+def require_run_entry(session, context, request):
+    from app.asset_publication import asset_row, state
+    if context.principal_type=='human' and request.get('run_kind') not in {'draft','node_test'}:
+        for kind in ('workflow','agent'):
+            if identifier := request.get(kind+'_id'):
+                row=asset_row(session,kind,identifier,context.tenant_id,context.workspace_id)
+                if row is not None and state(session,row):
+                    return require_execute(session,context,kind,identifier)
+    return require_execute(session,context)
 
 def directory(session, context, kind):
     from app.auth import validate_context
+    from app.asset_publication import KINDS as publishable, summary, view_payload
     from app.database.lifecycle import directory_live
     from app.platform_api import metadata
     from app.asset_archive import live_asset
@@ -102,8 +132,12 @@ def directory(session, context, kind):
     for row in session.scalars(select(Resource).where(Resource.kind==kind,Resource.tenant_id==context.tenant_id,Resource.workspace_id==context.workspace_id,live_asset(kind))):
         level=access_level(session,subject,row)
         if level<1 or not directory_live(session,row):continue
-        result.append({**metadata(row),'metadata_only':True,'access':{'view':True,'read':level>=2,'edit':level>=3,
-            'execute':'resources.execute' in context.permissions and role_access(session,subject,row)[1]}})
+        item={**metadata(row),'metadata_only':True,'access':{'view':True,'read':level>=2,'edit':level>=3,
+            'execute':executable(session,context,subject,row)}}
+        if kind in publishable:
+            value=view_payload(session,context,row,json.loads(row.payload))
+            item.update(name=value.get('name',item['name']),publication=summary(session,context,row,value))
+        result.append(item)
     return result
 
 def capabilities(session,context,kind,identifier):
@@ -112,7 +146,7 @@ def capabilities(session,context,kind,identifier):
     row=session.scalar(select(Resource).where(Resource.kind==kind,Resource.resource_id==identifier,Resource.tenant_id==context.tenant_id,Resource.workspace_id==context.workspace_id))
     if row is None:return {'view':False,'read':False,'edit':False,'execute':False}
     level=access_level(session,subject,row)
-    return {'view':level>=1,'read':level>=2,'edit':level>=3,'execute':'resources.execute' in context.permissions and role_access(session,subject,row)[1]}
+    return {'view':level>=1,'read':level>=2,'edit':level>=3,'execute':executable(session,context,subject,row)}
 
 def merge_directory(session,context,kind,items,parent_field=None,parent_id=None):
     """Content DTOs keep their existing domain filtering; view DTOs add no body."""

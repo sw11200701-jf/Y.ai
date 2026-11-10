@@ -36,6 +36,24 @@ SPACE="$API/spaces/$WORKSPACE_ID"
 
 在 AI 工作室打开资源的「API 接入配置」并发布固定 API 版本。工作流使用已保存的 2.0 定义，Agent 需先发布 Agent 版本，再把该版本绑定到 API 发布。页面会提供发布 ID、输入输出结构和调用示例。
 
+### 工作台发布与空间内使用
+
+资源所有者可从 AI 工作室将智能体或独立工作流发布到工作台。空间公开适用于当前空间的成员。部分公开可按成员或角色选择，命中任一项即可使用。私有仅资源所有者可使用。工作台执行发布时保存的快照，模型、工具、知识库和数据表仍按调用者权限核验。带工作流的智能体会一起保存并发布主流程快照，工作台通过该智能体执行主流程。
+
+以下工作台管理接口使用登录会话和 CSRF。写入时传当前公开范围的 `expected_revision`，首次为 0。工作流发布另需从详情读取 `expected_graph_sha256` 所对应的 `graph_sha256`。发布列表和详情返回 `publication`，包含状态、公开范围、版本和修订号。
+
+| 方法与路径 | 用途 |
+| --- | --- |
+| `GET /api/v1/agents/publication-audience` | 获取当前空间成员和角色选项 |
+| `POST /api/v1/agents/{agent_id}/publish` | 发布智能体。JSON 字段 `visibility` 取 `public`、`partial` 或 `private`，部分公开时提供 `user_ids`、`role_ids` 中至少一项 |
+| `POST /api/v1/workflows/{workflow_id}/publish` | 发布独立工作流。使用同样的公开字段，另传 `expected_graph_sha256` |
+| `GET /api/v1/agents/conversations` | 获取当前账号可在工作台选择的已发布智能体及工作流 |
+| `POST /api/v1/runs` | 传 `workflow_id` 运行工作流，或传 `agent_id` 和 `agent_version_id` 运行智能体。可附 `message` 和 `inputs` |
+
+既有资源首次设置公开范围前沿用原授权。工作台公开范围也约束平台 API 的账号访问。已设置公开范围的资源通过具备空间成员身份、执行授权和固定 API 发布的平台代理令牌接入。
+
+### 固定 API 版本
+
 | 方法与路径 | 用途 |
 | --- | --- |
 | `GET /spaces/{workspace_id}/publications/{publication_id}` | 读取该发布版本及 `input_schema`、`output_schema` |

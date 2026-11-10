@@ -132,8 +132,9 @@ class RunScheduler:
     async def _submit(self, request: RunCreate, context, session, *, frozen_agents=None, semantic_plan=None, builtin_snapshot=None, application=None, prepared_message=None, proposed_run_id=None, commit=True, enqueue=True):
         from app.rbac import require_any_permission,RUN_PERMISSIONS
         require_any_permission(context,session,RUN_PERMISSIONS)
-        from app.resource_policy import require_execute
-        require_execute(session,context)
+        from app.resource_policy import require_execute, require_run_entry
+        from app.asset_publication import execution_version, execution_workflow
+        require_run_entry(session,context,request.model_dump())
         for resource_kind,identifier in (('workflow',request.workflow_id),('agent',request.agent_id or request.draft_agent_id)):
             if identifier:require_execute(session,context,resource_kind,identifier)
         machine=getattr(context,'principal_type','human')=='service' 
@@ -161,8 +162,12 @@ class RunScheduler:
             raise AppError("VALIDATION_ERROR", "单节点测试必须提交当前草稿", 422)
 
         workflow = request.workflow
+        from_published_workflow = False
         if request.workflow_id:
-            workflow = WorkflowDefinition.model_validate(get_resource(session, "workflow", request.workflow_id, context))
+            draft = get_resource(session, "workflow", request.workflow_id, context)
+            source = execution_workflow(session, context, request.workflow_id, draft)
+            from_published_workflow = source is not draft
+            workflow = WorkflowDefinition.model_validate(source)
         if request.draft_agent_id:
             scoped_config = await invoke("app.agents.service", "get_agent_config", agent_id=request.draft_agent_id, context=context, session=session)
             from app.agents.data_tools import authorize_scope
@@ -172,6 +177,8 @@ class RunScheduler:
             require_execute(session,context,'workflow',request.workflow.id)
             get_resource(session,'workflow',request.workflow.id,context,access='write')
         if request.agent_id:
+            version = execution_version(session, context, request.agent_id, request.agent_version_id)
+            request = request.model_copy(update={"agent_version_id": version})
             scoped_config=await invoke("app.agents.service","get_agent_config",agent_id=request.agent_id,agent_version_id=request.agent_version_id,context=context,session=session)
             if scoped_config.get('main_workflow_id'):require_execute(session,context,'workflow',scoped_config['main_workflow_id'])
             for binding in scoped_config.get('bindings',[]):require_execute(session,context,'plugin_version',binding['plugin_version_id'])
@@ -186,7 +193,7 @@ class RunScheduler:
                     if current_config!=scoped_config:raise AppError("AGENT_CONFIG_CHANGED","智能体配置在提交期间发生变化，请重新提交",409)
             except TimeoutError as exc:
                 raise AppError("RUN_TIMEOUT", "Agent planning exceeded deadline", 504) from exc
-        elif workflow.mode == "model" and application is None and context.principal_type!='platform':
+        elif workflow.mode == "model" and application is None and context.principal_type!='platform' and not (from_published_workflow and workflow.schemaVersion == "2.0"):
             raise AppError("VALIDATION_ERROR", "Model mode requires a configured agent planner; direct workflows use demo mode")
         ordered = validate_workflow(workflow)
         if any(node.type in {"query","calculate","chart","report"} for node in ordered) and request.query.entity not in context.allowed_entities:
@@ -230,6 +237,8 @@ class RunScheduler:
         payload = run.model_dump(mode="json")
         if context.principal_type=='human' and request.workflow is not None and request.workflow.id:
             payload['source_resource_refs']=[{'kind':'workflow','resource_id':request.workflow.id}]
+        if context.principal_type=='human' and request.agent_id and scoped_config.get('main_workflow_id'):
+            payload['source_resource_refs']=[{'kind':'workflow','resource_id':scoped_config['main_workflow_id']}]
         payload["request_id"] = getattr(request, "request_id", None)
         if request.agent_id or request.draft_agent_id:
             config=scoped_config
