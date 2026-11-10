@@ -1,9 +1,9 @@
 import json
 from fastapi import APIRouter, Depends, Query, Request
 from app.auth import identity
-from app.db import get_session, list_resources, get_resource
+from app.db import get_session, get_resource
 from app.errors import AppError
-from .schemas import ProviderWrite, ProviderPatch, ModelWrite, ModelPatch, Empty, ProviderView, ModelView, ProviderList, ProviderPresetList, ModelList, UsableList
+from .schemas import ProviderWrite, ProviderPatch, ModelWrite, ModelPatch, Empty, ProviderView, ModelView, ProviderList, ProviderPresetList, ModelList, UsableList, ReviewDecision
 from . import service as s
 
 router = APIRouter(tags=['model-management'])
@@ -19,7 +19,7 @@ def provider_presets(request: Request, session=Depends(get_session)):
 @router.get('/model-providers', response_model=ProviderList)
 def providers(request: Request, session=Depends(get_session)):
     context = identity(request);s.manage(context, session)
-    return {'items': [s.provider_view(value) for value in list_resources(session, s.PROVIDER, context) if not value.get('archived')]}
+    return {'items': [s.provider_view(value, row.owner_id == context.operator_id) for row, value in s.catalog_rows(session, context, s.PROVIDER)]}
 
 
 @router.post('/model-providers', status_code=201, response_model=ProviderView)
@@ -29,8 +29,9 @@ def create_provider(body: ProviderWrite, request: Request, session=Depends(get_s
 
 @router.get('/model-providers/{provider_id}', response_model=ProviderView)
 def provider(provider_id: str, request: Request, session=Depends(get_session)):
-    _, value = s.managed_row(session, identity(request), s.PROVIDER, provider_id)
-    return s.provider_view(value)
+    context = identity(request)
+    row, value = s.managed_row(session, context, s.PROVIDER, provider_id)
+    return s.provider_view(value, row.owner_id == context.operator_id)
 
 
 @router.patch('/model-providers/{provider_id}', response_model=ProviderView)
@@ -46,8 +47,8 @@ def delete_provider(provider_id: str, request: Request, expected_revision: int =
 @router.get('/model-providers/{provider_id}/models', response_model=ModelList)
 def provider_models(provider_id: str, request: Request, session=Depends(get_session)):
     context = identity(request);_, parent = s.managed_row(session, context, s.PROVIDER, provider_id)
-    return {'items': [s.model_view(value, parent) for value in list_resources(session, s.MODEL, context)
-                      if value['provider_id'] == provider_id and not value.get('archived')]}
+    return {'items': [s.model_view(value, parent, row.owner_id == context.operator_id)
+                      for row, value in s.catalog_rows(session, context, s.MODEL) if value['provider_id'] == provider_id]}
 
 
 @router.post('/model-providers/{provider_id}/models', status_code=201, response_model=ModelView)
@@ -57,9 +58,9 @@ def create_model(provider_id: str, body: ModelWrite, request: Request, session=D
 
 @router.get('/models/{model_id}', response_model=ModelView)
 def model(model_id: str, request: Request, session=Depends(get_session)):
-    context = identity(request);_, value = s.managed_row(session, context, s.MODEL, model_id)
+    context = identity(request);row, value = s.managed_row(session, context, s.MODEL, model_id)
     _, parent = s.managed_row(session, context, s.PROVIDER, value['provider_id'])
-    return s.model_view(value, parent)
+    return s.model_view(value, parent, row.owner_id == context.operator_id)
 
 
 @router.patch('/models/{model_id}', response_model=ModelView)
@@ -92,7 +93,24 @@ def usable_models(request: Request, session=Depends(get_session)):
     return s.usable_catalog(session, identity(request))
 
 
+@router.get('/model-catalog/reviews')
+def reviews(request: Request, session=Depends(get_session)):
+    return s.review_queue(session, identity(request))
+
+
+@router.post('/model-providers/{provider_id}/review')
+def review_provider(provider_id: str, body: ReviewDecision, request: Request, session=Depends(get_session)):
+    return s.review_submission(session, identity(request), s.PROVIDER, provider_id, body)
+
+
+@router.post('/models/{model_id}/review')
+def review_model(model_id: str, body: ReviewDecision, request: Request, session=Depends(get_session)):
+    return s.review_submission(session, identity(request), s.MODEL, model_id, body)
+
+
 def test_config(session, context, provider, model=None):
+    if not s.approved(provider) or (model is not None and not s.approved(model)):
+        raise AppError('MODEL_REVIEW_PENDING', '请在审批通过后测试平台和模型', 409)
     if not provider['enabled'] or model and not model['enabled']:
         raise AppError('MODEL_DISABLED', '请先启用待测试的平台和模型', 409)
     if provider['auth_type'] == 'api_key' and not provider.get('secret_ref'):

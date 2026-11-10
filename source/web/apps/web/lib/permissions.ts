@@ -9,6 +9,7 @@ export function hasPermission(user: Json, permission: string) {
   return Array.isArray(user.permissions) && user.permissions.includes(permission);
 }
 export function canOpenPage(user: Json, page: string) {
+  if(page==='models')return typeof user.id==='string'&&!!user.id;
   if(page==='workspace-logs')return user.role==='super_admin';
   if(page==='platform-access')return ['platform.keys.manage','platform.keys.admin','spaces.manage'].some(key=>hasPermission(user,key));
   if(page==='asset-api')return ['page.ai','page.workbench'].some(key=>hasPermission(user,key));

@@ -6,6 +6,7 @@ from app.agents.vision import VisionProfile
 
 Parameter = Literal['temperature', 'top_p', 'max_tokens', 'frequency_penalty', 'presence_penalty', 'stop', 'seed']
 PresetKey = Literal['custom', 'openai', 'volcengine_ark', 'aliyun_bailian', 'deepseek']
+Visibility = Literal['public', 'private']
 
 
 class Strict(BaseModel):
@@ -41,6 +42,7 @@ class ProviderWrite(Strict):
     timeout_seconds: float = Field(default=20, ge=.1, le=300)
     allow_private_network: bool = False
     enabled: bool = True
+    visibility: Visibility | None = None
 
 
 class ProviderPatch(Strict):
@@ -56,6 +58,7 @@ class ProviderPatch(Strict):
     timeout_seconds: float | None = Field(default=None, ge=.1, le=300)
     allow_private_network: bool | None = None
     enabled: bool | None = None
+    visibility: Visibility | None = None
 
     @model_validator(mode='after')
     def no_nulls(self):
@@ -70,6 +73,7 @@ class ModelWrite(Strict):
     purpose: Literal['chat'] = 'chat'
     enabled: bool = True
     workspace_use: bool = False
+    visibility: Visibility | None = None
     context_window: int = Field(default=131072, ge=512, le=1048576)
     max_output_tokens: int = Field(default=16384, ge=1, le=393216)
     capabilities: Capabilities = Field(default_factory=Capabilities)
@@ -95,6 +99,7 @@ class ModelPatch(Strict):
     purpose: Literal['chat'] | None = None
     enabled: bool | None = None
     workspace_use: bool | None = None
+    visibility: Visibility | None = None
     context_window: int | None = Field(default=None, ge=512, le=1048576)
     max_output_tokens: int | None = Field(default=None, ge=1, le=393216)
     capabilities: Capabilities | None = None
@@ -110,7 +115,20 @@ class Empty(Strict):
     pass
 
 
-class ProviderView(Strict):
+class ReviewDecision(Strict):
+    expected_revision: int = Field(ge=1)
+    decision: Literal['approve', 'reject']
+
+
+class SharingView(Strict):
+    visibility: Visibility
+    requested_visibility: Visibility | None
+    review_status: Literal['approved', 'pending', 'rejected']
+    can_manage: bool
+    approved: bool
+
+
+class ProviderView(SharingView):
     id: str
     name: str
     protocol: Literal['openai_compatible']
@@ -127,7 +145,8 @@ class ProviderView(Strict):
     source: Literal['managed']
 
 
-class ModelView(ModelWrite):
+class ModelView(ModelWrite, SharingView):
+    visibility: Visibility
     id: str
     provider_id: str
     revision: int

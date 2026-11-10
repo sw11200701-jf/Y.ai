@@ -29,7 +29,7 @@ export function SlicingRecipeSettings({view,draft,onChange,disabled}:{view:Built
   finally{if(valid())setLoading(false);}
  }
  return <fieldset disabled={disabled} style={{border:0,padding:0,margin:'24px 0'}}>
-  <h3>切片工作流</h3>
+  <h3>编辑切片工作流</h3>
   <select disabled={view.id!=='builtin_knowledge_chunker'} aria-label="切片方案" value={draft.recipe_version||'knowledge-chunker-v1'} onChange={e=>onChange({...draft,recipe_version:e.target.value})}>
    <option value="knowledge-chunker-v1">原文片段与概述（兼容已有配置）</option><option value={defaults.recipe_version}>语义知识 · 八阶段审核与最新导出</option>
   </select>
@@ -37,10 +37,17 @@ export function SlicingRecipeSettings({view,draft,onChange,disabled}:{view:Built
    <p className="hint">来源准备 → 计划与补读 → 语义切片 → 两轮独立审核 ↔ 有限返修 → 跨组归并 → 关系候选与逐对审核 → 最终知识及来源审核 → 保存新草稿。发布后才用于检索。</p>
    {view.workflow?.strategy&&<p>{view.workflow.strategy.policy}</p>}
    <h4>允许处理的知识库</h4>
-   {view.id!=='builtin_knowledge_chunker'&&<p className="hint">留空时仅处理本次明确选择且有完整权限的文档；选定知识库可进一步限制处理范围。</p>}
+   {view.id!=='builtin_knowledge_chunker'&&<><label>使用范围 <select aria-label="知识库使用范围" value={draft.source_scope==null?'all':'selected'} onChange={event=>onChange({...draft,source_scope:event.target.value==='all'?null:[]})}>
+    <option value="all">全部已授权知识库</option><option value="selected">指定知识库</option></select></label>
+   <p className="hint">只处理本次选中的原件，并核对执行人的资料权限。</p></>}
+   {(view.id==='builtin_knowledge_chunker'||draft.source_scope!=null)&&<>
    {directoryError&&<p role="alert">{directoryError}</p>}
    {[...new Set([...bases.map(v=>v.id),...(draft.source_scope||[])])].map(id=><label key={id} style={{display:'block'}}><input type="checkbox" checked={draft.source_scope?.includes(id)||false} onChange={e=>onChange({...draft,source_scope:e.target.checked?[...(draft.source_scope||[]),id]:(draft.source_scope||[]).filter(k=>k!==id)})}/>{bases.find(v=>v.id===id)?.name||`${id}（已保存范围）`}</label>)}
    {!bases.length&&!draft.source_scope?.length&&<p>当前目录没有可见知识库；建立并授权知识库后才能选择资料处理。</p>}
+   </>}
+   <h4>工作流分支</h4>
+   <label style={{display:'block'}}><input type="checkbox" checked={options.max_context_rounds>0} onChange={event=>onChange({...draft,recipe_options:{...options,max_context_rounds:event.target.checked?defaults.recipe_options.max_context_rounds:0}})}/>允许任务计划补读上下文</label>
+   <label style={{display:'block'}}><input type="checkbox" checked={options.max_repair_rounds>0} onChange={event=>onChange({...draft,recipe_options:{...options,max_repair_rounds:event.target.checked?defaults.recipe_options.max_repair_rounds:0}})}/>允许审核后语义返修</label>
    <details style={{margin:'20px 0'}}><summary>阶段参数与预算边界</summary>
     {(Object.keys(optionLabels) as (keyof typeof optionLabels)[]).map(name=><label key={name} style={{display:'block',margin:12}}>{optionLabels[name]}<input type="number" aria-label={name} value={options[name]??''} min={schema?.[name]?.minimum??(name==='source_group_bytes'?256:0)} max={schema?.[name]?.maximum??(name==='source_group_bytes'?262144:name==='max_relation_pairs'?512:name==='max_context_rounds'?8:2)} step={1} onChange={e=>onChange({...draft,recipe_options:{...options,[name]:e.target.value===''?undefined:Number(e.target.value)} as RecipeOptions})}/></label>)}
     <p>参数范围来自后台节点契约。关系候选超过上限会停止，保留完整问题；设为0不会跳过应有检查。完整请求、输出与全部返修调用还受本次任务总预算限制。</p>

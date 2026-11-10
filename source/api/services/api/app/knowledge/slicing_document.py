@@ -58,8 +58,7 @@ def require_plan_scope(plan,current,root,file):
     kb=root['knowledge_base_id'];scope=current.get('source_scope') or []
     if plan.get('document_scope_contract')=='current-document-scope-v1':
         if plan.get('source_scope')!=[kb] or plan.get('file_id')!=file['id']:fail('固定当前文档范围不符','SLICING_SCOPE_DENIED')
-        from app.agents.slicing_specialists import SPECIALISTS
-        if (scope or current.get('recipe_version')=='portable-slicing-1.0.0' and current.get('specialist_agent_id') not in SPECIALISTS) and kb not in scope:fail('当前配置不允许此文档所属知识库','SLICING_SCOPE_DENIED')
+        if (scope or current.get('recipe_version')=='portable-slicing-1.0.0' and not current.get('specialist_agent_id')) and kb not in scope:fail('当前配置不允许此文档所属知识库','SLICING_SCOPE_DENIED')
         if any(s.get('file_id')!=file['id'] or s.get('version_sha256')!=file['sha256'] for s in plan['registry']['sources'].values()):fail('当前文档计划不可装载其他文件','SLICING_SCOPE_DENIED')
     elif kb not in plan['source_scope'] or kb not in scope:
         fail('资料不在固定切片Agent范围与当前配置范围交集中','SLICING_SCOPE_DENIED')
@@ -141,7 +140,7 @@ def prepare_document(*, document_id, snapshot, context, session, max_model_calls
         group.append(sid); size += cost
     if group: groups.append(group)
     from app.agents.slicing_specialists import SPECIALISTS,groups as specialist_groups
-    specialist=snapshot.get('agent_id')
+    specialist=snapshot.get('strategy',snapshot.get('agent_id'))
     if specialist in SPECIALISTS:groups=specialist_groups(registry,specialist,limit)
     # Only new plans use the consistent compact contract; old pinned prompts remain immutable.
     from .slicing_native_prompts import pin
@@ -195,7 +194,7 @@ def prepare_document(*, document_id, snapshot, context, session, max_model_calls
         groups=plan['source_groups']
     if specialist in SPECIALISTS:
         from app.agents.slicing_specialists import contexts
-        plan.update(specialist_agent_id=specialist,source_group_contract='specialist-native-context-v1',
+        plan.update(specialist_agent_id=snapshot['agent_id'],source_group_contract='specialist-native-context-v1',
             source_context_groups=contexts(registry,groups,specialist))
     if minimum_model_calls(groups)>max_model_calls:fail('完整来源组、两次独立初审及知识/来源终审超出阶段调用预约，未丢弃尾部来源','SLICING_BUDGET_INVALID')
     # Check every initial full source group. Terminal requests are packed using

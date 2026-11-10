@@ -8,9 +8,9 @@ import os
 from pathlib import Path
 from sqlalchemy import select, update
 from pydantic import ValidationError
-from app.db import Resource, new_id, utc_now, get_resource, list_resources
+from app.db import Resource, new_id, utc_now, get_resource
 from app.auth import validate_context
-from app.rbac import require_permission, require_any_permission, RUN_PERMISSIONS, audit
+from app.rbac import require_any_permission, RUN_PERMISSIONS, audit
 from app.errors import AppError
 from .schemas import ModelWrite, Capabilities
 from .security import validate_model_endpoint, validate_model_url
@@ -29,34 +29,64 @@ def scoped(session, context, kind, identifier=None):
 
 
 def manage(context, session, *, write=False):
-    require_permission(context, session, 'page.models')
-    if write:
-        require_permission(context, session, 'models.manage')
+    user = validate_context(context, session)
+    if context.principal_type != 'human' or user.must_change_password:
+        raise AppError('FORBIDDEN', '请使用有效的人类账号访问模型管理', 403)
+    return user
+
+
+def visibility(value, kind):
+    return value.get('visibility') or ('public' if kind == PROVIDER or value.get('workspace_use') else 'private')
+
+
+def approved(value):
+    return value.get('approved', True)
+
+
+def _visible(context, row, value, *, write=False):
+    if row.owner_id == context.operator_id:
+        return True
+    return not write and approved(value) and visibility(value, row.kind) == 'public'
+
+
+def catalog_rows(session, context, kind):
+    manage(context, session)
+    for row in session.scalars(scoped(session, context, kind)):
+        value = json.loads(row.payload)
+        if not value.get('archived') and _visible(context, row, value):
+            yield row, value
 
 
 def managed_row(session, context, kind, identifier, *, write=False):
     manage(context, session, write=write)
-    get_resource(session, kind, identifier, context, 'write' if write else 'read')
     row = session.scalar(scoped(session, context, kind, identifier))
-    if row is None or json.loads(row.payload).get('archived'):
+    value = json.loads(row.payload) if row else {}
+    if row is None or value.get('archived') or not _visible(context, row, value, write=write):
         raise AppError('NOT_FOUND', '模型配置不存在或无权访问', 404)
-    return row, json.loads(row.payload)
+    return row, value
 
 
-def provider_view(value):
+def _sharing_view(value, kind, can_manage=True):
+    return {'visibility': visibility(value, kind), 'requested_visibility': value.get('requested_visibility'),
+            'review_status': value.get('review_status', 'approved'), 'can_manage': can_manage, 'approved': approved(value)}
+
+
+def provider_view(value, can_manage=True):
     keys = ('id', 'name', 'protocol', 'preset', 'base_url', 'auth_type', 'timeout_seconds',
             'allow_private_network', 'enabled', 'revision', 'created_at', 'updated_at')
-    return {**{key: value[key] for key in keys}, 'has_key': bool(value.get('secret_ref')), 'source': 'managed'}
+    return {**{key: value[key] for key in keys}, **_sharing_view(value, PROVIDER, can_manage),
+            'has_key': bool(value.get('secret_ref')), 'source': 'managed'}
 
 
-def model_view(value, provider):
+def model_view(value, provider, can_manage=True):
     keys = ('id', 'provider_id', 'name', 'model_name', 'purpose', 'enabled', 'workspace_use',
             'context_window', 'max_output_tokens', 'capabilities', 'revision', 'created_at', 'updated_at')
-    return {**{key: value[key] for key in keys}, 'config_version': version(value, provider), 'source': 'managed'}
+    return {**{key: value[key] for key in keys}, **_sharing_view(value, MODEL, can_manage),
+            'config_version': version(value, provider), 'source': 'managed'}
 
 
 def version(model, provider):
-    return f'p{provider["revision"]}:m{model["revision"]}'
+    return f'p{provider.get("runtime_revision", provider["revision"])}:m{model.get("runtime_revision", model["revision"])}'
 
 
 def insert(session, context, kind, value):
@@ -70,17 +100,18 @@ def insert(session, context, kind, value):
     return value
 
 
-def replace(session, context, row, previous, changes, expected_revision):
+def replace(session, context, row, previous, changes, expected_revision, *, sharing_only=False, action='model_catalog_update'):
     if previous['revision'] != expected_revision:
         raise AppError('MODEL_VERSION_CHANGED', '配置已变化，请刷新后重试', 409)
     value = {**previous, **changes, 'revision': previous['revision'] + 1, 'updated_at': utc_now()}
+    value['runtime_revision'] = previous.get('runtime_revision', previous['revision']) if sharing_only else value['revision']
     result = session.execute(update(Resource).where(Resource.id == row.id, Resource.payload == row.payload)
         .values(payload=json.dumps(value, ensure_ascii=False), updated_at=value['updated_at']),
         execution_options={'synchronize_session': False})
     if result.rowcount != 1:
         session.rollback()
         raise AppError('MODEL_VERSION_CHANGED', '配置被其他操作更新，请刷新后重试', 409)
-    audit(session, context, 'model_catalog_update', row.kind, row.resource_id,
+    audit(session, context, action, row.kind, row.resource_id,
           {'revision': value['revision'], 'fields': sorted(key for key in changes if key != 'secret_ref')})
     session.commit()
     session.expire(row)
@@ -89,7 +120,7 @@ def replace(session, context, row, previous, changes, expected_revision):
 
 def credential_changes(body, old=None):
     old = old or {}
-    values = body.model_dump(exclude_unset=True, exclude={'expected_revision', 'api_key', 'clear_api_key', 'retain_api_key'})
+    values = body.model_dump(exclude_unset=True, exclude={'expected_revision', 'api_key', 'clear_api_key', 'retain_api_key', 'visibility'})
     raw = body.api_key.get_secret_value() if body.api_key is not None else ''
     if any(c in raw for c in '\r\n') or raw and not raw.strip():
         raise AppError('VALIDATION_ERROR', '认证密钥格式无效', 422)
@@ -129,42 +160,177 @@ def forget_old_secret(old, new):
             pass
 
 
+def _new_sharing(context, desired):
+    if context.role == 'super_admin':
+        if desired == 'private':
+            raise AppError('MODEL_PUBLIC_REQUIRED', '超级管理员只能发布公开的平台和模型', 422)
+        return {'visibility': 'public', 'approved': True, 'review_status': 'approved', 'requested_visibility': None}
+    desired = desired or 'private'
+    return {'visibility': desired, 'approved': False, 'review_status': 'pending', 'requested_visibility': desired}
+
+
+def _private_network(context, value):
+    if value and context.role != 'super_admin':
+        raise AppError('MODEL_PRIVATE_NETWORK_FORBIDDEN', '私有网络地址需要由超级管理员配置', 403)
+
+
+def _check_parent(session, context, value, desired, *, active=False):
+    parent = session.scalar(scoped(session, context, PROVIDER, value['provider_id']))
+    provider = json.loads(parent.payload) if parent else {}
+    if not parent or provider.get('archived'):
+        raise AppError('MODEL_PROVIDER_UNAVAILABLE', '请先配置可用的平台', 409)
+    if active and not approved(provider):
+        raise AppError('MODEL_PROVIDER_PENDING', '请先审批模型所属平台', 409)
+    target = visibility(provider, PROVIDER) if active else provider.get('requested_visibility') or visibility(provider, PROVIDER)
+    if desired == 'public' and target != 'public':
+        raise AppError('MODEL_PUBLIC_PROVIDER_REQUIRED', '公开模型必须使用公开平台', 409)
+
+
+def _check_provider_scope(session, context, identifier, desired):
+    if desired == 'private':
+        for row in session.scalars(scoped(session, context, MODEL)):
+            child = json.loads(row.payload)
+            if (child['provider_id'] == identifier and not child.get('archived')
+                    and (approved(child) and visibility(child, MODEL) == 'public'
+                         or child.get('requested_visibility') == 'public')):
+                raise AppError('MODEL_PUBLIC_CHILD_EXISTS', '请先处理该平台下的公开模型及待审批公开模型', 409)
+
+
+def _request_visibility(session, context, row, previous, desired, revision):
+    if desired == 'private' and context.role == 'super_admin':
+        raise AppError('MODEL_PUBLIC_REQUIRED', '超级管理员只能发布公开的平台和模型', 422)
+    if row.kind == MODEL:
+        _check_parent(session, context, previous, desired)
+    else:
+        _check_provider_scope(session, context, row.resource_id, desired)
+    if previous.get('requested_visibility') == desired or approved(previous) and visibility(previous, row.kind) == desired and not previous.get('requested_visibility'):
+        raise AppError('MODEL_VISIBILITY_UNCHANGED', '此可用范围已生效或已提交审批', 409)
+    return replace(session, context, row, previous,
+                   {'requested_visibility': desired, 'review_status': 'pending'}, revision,
+                   sharing_only=True, action='model_visibility_request')
+
+
+def _after_edit(context, value, kind):
+    if context.role == 'super_admin':
+        return {}
+    return {'approved': False, 'review_status': 'pending',
+            'requested_visibility': value.get('requested_visibility') or visibility(value, kind)}
+
+
 def create_provider(session, context, body):
+    from app.platform_api import write_lock
+    write_lock(session)
     manage(context, session, write=True)
+    _private_network(context, body.allow_private_network)
+    sharing = _new_sharing(context, body.visibility)
     # Defaults must be stored too; patches intentionally only contain sent fields.
     complete = type(body).model_validate(body.model_dump())
-    values = complete.model_dump(exclude={'api_key', 'clear_api_key', 'retain_api_key'})
+    values = complete.model_dump(exclude={'api_key', 'clear_api_key', 'retain_api_key', 'visibility'})
     values.update(credential_changes(complete))
+    values.update(sharing)
     values['id'] = new_id('mp')
     return provider_view(insert(session, context, PROVIDER, values))
 
 
 def update_provider(session, context, identifier, body):
+    from app.platform_api import write_lock
+    write_lock(session)
     row, previous = managed_row(session, context, PROVIDER, identifier, write=True)
     if previous['revision'] != body.expected_revision:
         raise AppError('MODEL_VERSION_CHANGED', '平台配置已变化，请刷新后重试', 409)
-    changes = credential_changes(body, previous)
+    if body.visibility:
+        if body.model_fields_set - {'expected_revision', 'visibility'}:
+            raise AppError('MODEL_VISIBILITY_SEPARATE', '请单独提交可用范围变更', 422)
+        return provider_view(_request_visibility(session, context, row, previous, body.visibility, body.expected_revision))
+    _private_network(context, body.allow_private_network)
+    changes = {**credential_changes(body, previous), **_after_edit(context, previous, PROVIDER)}
     value = replace(session, context, row, previous, changes, body.expected_revision)
     forget_old_secret(previous, value)
     return provider_view(value)
 
 
 def create_model(session, context, provider_id, body):
+    from app.platform_api import write_lock
+    write_lock(session)
     _, provider = managed_row(session, context, PROVIDER, provider_id, write=True)
-    value = body.model_dump()
+    desired = body.visibility or ('public' if body.workspace_use else None)
+    sharing = _new_sharing(context, desired)
+    value = body.model_dump(exclude={'visibility'})
     value.update(id=new_id('mc'), provider_id=provider_id)
+    _check_parent(session, context, value, sharing['visibility'], active=sharing['approved'])
+    value.update(sharing, workspace_use=sharing['visibility'] == 'public')
     return model_view(insert(session, context, MODEL, value), provider)
 
 
 def update_model(session, context, identifier, body):
+    from app.platform_api import write_lock
+    write_lock(session)
     row, previous = managed_row(session, context, MODEL, identifier, write=True)
     _, provider = managed_row(session, context, PROVIDER, previous['provider_id'], write=True)
-    changes = body.model_dump(exclude_unset=True, exclude={'expected_revision'})
+    desired = body.visibility
+    if body.workspace_use is not None:
+        legacy = 'public' if body.workspace_use else 'private'
+        if desired and desired != legacy:
+            raise AppError('MODEL_VISIBILITY_INVALID', '模型可用范围提交不一致', 422)
+        if legacy != visibility(previous, MODEL):
+            desired = legacy
+    if desired:
+        if body.model_fields_set - {'expected_revision', 'visibility', 'workspace_use'}:
+            raise AppError('MODEL_VISIBILITY_SEPARATE', '请单独提交可用范围变更', 422)
+        return model_view(_request_visibility(session, context, row, previous, desired, body.expected_revision), provider)
+    changes = body.model_dump(exclude_unset=True, exclude={'expected_revision', 'visibility', 'workspace_use'})
     try:
-        ModelWrite.model_validate({key: changes.get(key, previous[key]) for key in ModelWrite.model_fields})
+        ModelWrite.model_validate({key: changes.get(key, previous.get(key)) for key in ModelWrite.model_fields})
     except ValidationError:
         raise AppError('VALIDATION_ERROR', '模型能力或输出/上下文上限配置无效', 422) from None
-    return model_view(replace(session, context, row, previous, changes, body.expected_revision), provider)
+    return model_view(replace(session, context, row, previous, {**changes, **_after_edit(context, previous, MODEL)}, body.expected_revision), provider)
+
+
+def _reviewer(context, session):
+    if manage(context, session).role != 'super_admin':
+        raise AppError('FORBIDDEN', '只有超级管理员可以审批模型与平台', 403)
+
+
+def review_queue(session, context):
+    _reviewer(context, session)
+    items = []
+    for kind in (PROVIDER, MODEL):
+        for row in session.scalars(scoped(session, context, kind)):
+            value = json.loads(row.payload)
+            if value.get('archived') or value.get('review_status') != 'pending':
+                continue
+            items.append({'id': row.resource_id, 'kind': 'provider' if kind == PROVIDER else 'model',
+                          'name': value['name'], 'owner_id': row.owner_id, 'revision': value['revision'],
+                          'requested_visibility': value['requested_visibility'],
+                          'endpoint': value.get('base_url'), 'model_name': value.get('model_name'),
+                          'provider_id': value.get('provider_id')})
+    return {'items': items}
+
+
+def review_submission(session, context, kind, identifier, body):
+    from app.platform_api import write_lock
+    write_lock(session)
+    _reviewer(context, session)
+    row = session.scalar(scoped(session, context, kind, identifier))
+    value = json.loads(row.payload) if row else {}
+    if not row or value.get('archived') or value.get('review_status') != 'pending':
+        raise AppError('MODEL_REVIEW_NOT_PENDING', '没有待处理的申请，请刷新审批列表', 409)
+    desired = value['requested_visibility']
+    changes = {'requested_visibility': None, 'review_status': 'rejected'}
+    if body.decision == 'approve':
+        from app.auth_models import User
+        owner = session.get(User, row.owner_id)
+        if owner and owner.role == 'super_admin' and desired == 'private':
+            raise AppError('MODEL_PUBLIC_REQUIRED', '超级管理员只能发布公开的平台和模型', 422)
+        if kind == MODEL:
+            _check_parent(session, context, value, desired, active=True)
+            changes['workspace_use'] = desired == 'public'
+        else:
+            _check_provider_scope(session, context, identifier, desired)
+        changes.update(visibility=desired, approved=True, review_status='approved')
+    result = replace(session, context, row, value, changes, body.expected_revision,
+                     sharing_only=True, action='model_review_' + body.decision)
+    return {'id': identifier, 'review_status': result['review_status']}
 
 
 def references(session, context, identifier):
@@ -196,6 +362,8 @@ def references(session, context, identifier):
 
 
 def archive_model(session, context, identifier, expected_revision):
+    from app.platform_api import write_lock
+    write_lock(session)
     row, value = managed_row(session, context, MODEL, identifier, write=True)
     managed_row(session, context, PROVIDER, value['provider_id'], write=True)
     if references(session, context, identifier):
@@ -205,6 +373,8 @@ def archive_model(session, context, identifier, expected_revision):
 
 
 def archive_provider(session, context, identifier, expected_revision):
+    from app.platform_api import write_lock
+    write_lock(session)
     row, value = managed_row(session, context, PROVIDER, identifier, write=True)
     children = [json.loads(item.payload) for item in session.scalars(scoped(session, context, MODEL))]
     if any(item['provider_id'] == identifier and not item.get('archived') for item in children):
@@ -265,6 +435,11 @@ def legacy_configs(session, context, *, strict=True):
 
 
 def can_use(session, context, value):
+    row = session.scalar(scoped(session, context, MODEL, value['id']))
+    if row is None or not approved(value):
+        return False
+    if visibility(value, MODEL) == 'private':
+        return context.principal_type == 'human' and row.owner_id == context.operator_id
     if getattr(context,'principal_type','human')=='platform':
         from app.platform_api import require_token_resource
         row=session.scalar(scoped(session,context,MODEL,value['id']))
@@ -274,7 +449,7 @@ def can_use(session, context, value):
             if exc.status_code in {403,404}:return False
             raise
         return True
-    if value.get('workspace_use') and getattr(context,'principal_type','human')!='service':
+    if getattr(context,'principal_type','human')!='service':
         return True
     try:
         get_resource(session, MODEL, value['id'], context)
@@ -323,6 +498,9 @@ def resolve_runtime_model(config_id, *, context, session, expected_version=None)
         if parent is None:
             raise AppError('MODEL_NOT_AVAILABLE', '所选模型平台不存在或不可用', 404)
         provider = json.loads(parent.payload)
+        if not approved(provider) or (visibility(provider, PROVIDER) == 'private' and
+                (context.principal_type != 'human' or parent.owner_id != context.operator_id)):
+            raise AppError('MODEL_NOT_AVAILABLE', '所选模型平台未审批或未授权', 404)
         if machine or context.principal_type=='platform':get_resource(session,PROVIDER,value['provider_id'],context)
         if provider.get('archived') or not provider['enabled'] or not value['enabled']:
             raise AppError('MODEL_DISABLED', '所选模型或平台已停用，请重新核对配置', 409)

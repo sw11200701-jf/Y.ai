@@ -2,24 +2,29 @@ import {validateRecipeDraft,type SlicingWorkflowView} from './slicing-workflow';
 import type {Json} from './api';
 export type RecipeOptions={max_context_rounds:number;max_repair_rounds:number;max_relation_pairs:number;source_group_bytes:number;csv_variant?:'original'|'excel_safe'};
 export type StagePrompts=Record<string,{system_prompt:string;user_prompt:string}>;
-export type BuiltinDraft={model_execution_mode?:'auto'|'direct'|'model_default'|null;recipe_version?:string|null;stage_prompts?:StagePrompts|null;source_scope?:string[]|null;recipe_options?:RecipeOptions|null;model_config_id:string|null;model_config_version:string|null;prompt_override:string|null};
-export type BuiltinView={configuration_errors?:string[];workflow?:SlicingWorkflowView;portable_recipe?:{recipe_version:string;stage_prompts:StagePrompts;recipe_options:RecipeOptions};id:string;name:string;builtin:true;deletable:false;contract_version:string;editable_fields:string[];fixed_tools:unknown[];input_schema:Json;output_schema:Json;default_prompt:string;configuration_scope:'current_workspace';execution_identity:'current_caller';configuration_status:'waiting_configuration'|'configured'|'model_unavailable';config:BuiltinDraft&{revision:number}};
+export type BuiltinDraft={name?:string|null;formats?:string[]|null;model_execution_mode?:'auto'|'direct'|'model_default'|null;recipe_version?:string|null;stage_prompts?:StagePrompts|null;source_scope?:string[]|null;recipe_options?:RecipeOptions|null;model_config_id:string|null;model_config_version:string|null;prompt_override:string|null};
+export type BuiltinView={configuration_errors?:string[];workflow?:SlicingWorkflowView;portable_recipe?:{recipe_version:string;stage_prompts:StagePrompts;recipe_options:RecipeOptions};id:string;name:string;builtin:boolean;deletable:false;formats?:string[];format_options?:string[];contract_version:string;editable_fields:string[];fixed_tools:unknown[];input_schema:Json;output_schema:Json;default_prompt:string;configuration_scope:'current_workspace';execution_identity:'current_caller';configuration_status:'waiting_configuration'|'configured'|'model_unavailable';config:BuiltinDraft&{revision:number}};
 const nullableString=(value:unknown)=>value===null||typeof value==='string';
 export function builtinView(value:unknown):BuiltinView{
  const v=value as Json;
- if(!v||!['builtin_knowledge_chunker','builtin_document_chunker','builtin_table_chunker','builtin_presentation_chunker'].includes(v.id)||v.builtin!==true||v.deletable!==false||typeof v.name!=='string'||typeof v.contract_version!=='string'||!Array.isArray(v.editable_fields)||!['model_config_id','prompt_override'].every(k=>v.editable_fields.includes(k))||!Array.isArray(v.fixed_tools)||!v.input_schema||!v.output_schema||typeof v.default_prompt!=='string'||v.configuration_scope!=='current_workspace'||v.execution_identity!=='current_caller'||!['waiting_configuration','configured','model_unavailable'].includes(v.configuration_status)||!v.config||!Number.isSafeInteger(v.config.revision)||v.config.revision<0||!['model_config_id','model_config_version','prompt_override'].every(k=>nullableString(v.config[k])))throw Error('内置Agent目录格式不完整，请刷新或联系维护人员。');
+ if(!v||!(v.builtin===true&&['builtin_knowledge_chunker','builtin_document_chunker','builtin_table_chunker','builtin_presentation_chunker'].includes(v.id)||v.builtin===false&&/^slicing_agent_[a-f0-9]{32}$/.test(v.id))||v.deletable!==false||typeof v.name!=='string'||typeof v.contract_version!=='string'||!Array.isArray(v.editable_fields)||!['model_config_id','prompt_override'].every(k=>v.editable_fields.includes(k))||!Array.isArray(v.fixed_tools)||!v.input_schema||!v.output_schema||typeof v.default_prompt!=='string'||v.configuration_scope!=='current_workspace'||v.execution_identity!=='current_caller'||!['waiting_configuration','configured','model_unavailable'].includes(v.configuration_status)||!v.config||!Number.isSafeInteger(v.config.revision)||v.config.revision<0||!['model_config_id','model_config_version','prompt_override'].every(k=>nullableString(v.config[k])))throw Error('切片智能体配置读取失败，请刷新。');
  return v as BuiltinView;
 }
 const recipeKeys=['recipe_version','stage_prompts','source_scope','recipe_options'] as const;
 const same=(a:unknown,b:unknown)=>JSON.stringify(a??null)===JSON.stringify(b??null);
-function recipePatch(view:BuiltinView,draft:BuiltinDraft){return Object.fromEntries(recipeKeys.filter(k=>!same(draft[k],view.config[k])).map(k=>[k,draft[k]]));}
-export function builtinDraft(view:BuiltinView):BuiltinDraft{return {model_execution_mode:view.config.model_execution_mode||'auto',model_config_id:view.config.model_config_id,model_config_version:view.config.model_config_version,prompt_override:view.config.prompt_override,...Object.fromEntries(recipeKeys.filter(k=>Object.hasOwn(view.config,k)).map(k=>[k,structuredClone(view.config[k])]))};}
+function recipePatch(view:BuiltinView,draft:BuiltinDraft){
+ const keys=view.builtin?recipeKeys:[...recipeKeys,'name','formats'] as const;
+ return Object.fromEntries(keys.filter(k=>!same(draft[k],view.config[k])).map(k=>[k,draft[k]]));
+}
+export function builtinDraft(view:BuiltinView):BuiltinDraft{return {model_execution_mode:view.config.model_execution_mode||'auto',model_config_id:view.config.model_config_id,model_config_version:view.config.model_config_version,prompt_override:view.config.prompt_override,...(!view.builtin?{name:view.config.name,formats:structuredClone(view.config.formats)}:{}),...Object.fromEntries(recipeKeys.filter(k=>Object.hasOwn(view.config,k)).map(k=>[k,structuredClone(view.config[k])]))};}
 export function modelChanged(view:BuiltinView,draft:BuiltinDraft){return draft.model_config_id!==view.config.model_config_id||draft.model_config_version!==view.config.model_config_version;}
 export function builtinDirty(view:BuiltinView,draft:BuiltinDraft){return (draft.model_execution_mode||'auto')!==(view.config.model_execution_mode||'auto')||modelChanged(view,draft)||draft.prompt_override!==view.config.prompt_override||Object.keys(recipePatch(view,draft)).length>0;}
 export function builtinPatch(view:BuiltinView,draft:BuiltinDraft){
  validateRecipeDraft(draft,view.workflow);
  if(draft.prompt_override!==null&&(!draft.prompt_override.trim()||Array.from(draft.prompt_override).length>8000))throw Error('任务提示须为非空白文本，最多8000字；也可选择恢复默认任务提示。');
  if(view.id==='builtin_knowledge_chunker'&&draft.recipe_version==='portable-slicing-1.0.0'&&!draft.source_scope?.length)throw Error('请明确选择允许处理的知识库范围。');
+ if(Array.isArray(draft.source_scope)&&!draft.source_scope.length&&!same(draft.source_scope,view.config.source_scope))throw Error('请选择知识库，或选择全部已授权知识库。');
+ if(!view.builtin&&(!draft.name?.trim()||!draft.formats?.length))throw Error('请填写名称并选择至少一种文件格式。');
  return {expected_revision:view.config.revision,...((draft.model_execution_mode||'auto')!==(view.config.model_execution_mode||'auto')?{model_execution_mode:draft.model_execution_mode||'auto'}:{}),...recipePatch(view,draft),...(modelChanged(view,draft)?{model_config_id:draft.model_config_id}:{}),...(draft.prompt_override!==view.config.prompt_override?{prompt_override:draft.prompt_override}:{})};
 }
 export type BuiltinRebaseChoice='mine'|'latest';
@@ -52,6 +57,10 @@ export function rebaseBuiltinDraft(previous:BuiltinView,draft:BuiltinDraft,lates
  result.model_config_id=model.id;result.model_config_version=model.version;
  result.model_execution_mode=atomic(previous.config.model_execution_mode||'auto',draft.model_execution_mode||'auto',latest.config.model_execution_mode||'auto','切片模型模式') as BuiltinDraft['model_execution_mode'];
  result.prompt_override=atomic(previous.config.prompt_override,draft.prompt_override,latest.config.prompt_override,'兼容方案任务提示') as string|null;
+ if(!latest.builtin){
+  result.name=atomic(previous.config.name,draft.name,latest.config.name,'智能体名称') as BuiltinDraft['name'];
+  result.formats=atomic(previous.config.formats,draft.formats,latest.config.formats,'文件格式') as BuiltinDraft['formats'];
+ }
  const stableRecipe=same(previous.config.recipe_version,draft.recipe_version)&&same(previous.config.recipe_version,latest.config.recipe_version);
  if(!stableRecipe){
   // A recipe switch changes the meaning of its dependent fields. Resolve the
@@ -68,5 +77,5 @@ export function rebaseBuiltinDraft(previous:BuiltinView,draft:BuiltinDraft,lates
 }
 export const builtinStatus={waiting_configuration:'待配置模型',configured:'已配置',model_unavailable:'模型不可用或版本已变化'};
 
-export type BuiltinDirectoryItem=Pick<BuiltinView,'id'|'name'|'configuration_status'|'configuration_scope'>;
-export function builtinDirectoryItem(value:unknown):BuiltinDirectoryItem{const v=value as Json;if(!v||typeof v.id!=='string'||typeof v.name!=='string'||!['waiting_configuration','configured','model_unavailable'].includes(v.configuration_status)||v.configuration_scope!=='current_workspace')throw Error('切片配置目录格式不完整');return {id:v.id,name:v.name,configuration_status:v.configuration_status,configuration_scope:v.configuration_scope};}
+export type BuiltinDirectoryItem=Pick<BuiltinView,'id'|'name'|'builtin'|'formats'|'configuration_status'|'configuration_scope'>;
+export function builtinDirectoryItem(value:unknown):BuiltinDirectoryItem{const v=value as Json;if(!v||typeof v.id!=='string'||typeof v.name!=='string'||!['waiting_configuration','configured','model_unavailable'].includes(v.configuration_status)||v.configuration_scope!=='current_workspace')throw Error('切片配置目录格式不完整');return {id:v.id,name:v.name,builtin:v.builtin!==false,formats:Array.isArray(v.formats)?v.formats:[],configuration_status:v.configuration_status,configuration_scope:v.configuration_scope};}

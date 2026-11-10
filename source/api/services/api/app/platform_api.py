@@ -261,9 +261,10 @@ def source_access(session,user,workspace_id,row,access):
  user,permissions=scoped_permissions(session,user,workspace_id)
  if row.kind in {'model_configuration','model_provider'}:
   if access=='write' or not {'page.ai','page.workbench'}&permissions:return False
-  from app.resource_policy import access_level
+  from app.model_catalog.service import approved,visibility
   subject=space_subject(session,user,workspace_id);value=_value(row)
-  if row.kind=='model_configuration':return not value.get('archived') and (bool(value.get('workspace_use')) or access_level(session,subject,row)>=2)
+  if value.get('archived') or not approved(value) or visibility(value,row.kind)!='public':return False
+  if row.kind=='model_configuration':return True
   return any(_value(model).get('provider_id')==row.resource_id and source_access(session,subject,workspace_id,model,'read') for model in session.scalars(select(Resource).where(Resource.kind=='model_configuration',Resource.tenant_id==user.tenant_id,Resource.workspace_id==workspace_id)))
  page={'agent':{'page.ai','page.workbench'},'agent_version':{'page.ai','page.workbench'},'workflow':{'page.ai','page.workbench'},'database':{'page.database'},'data_table':{'page.database'},'data_table_version':{'page.database'}}.get(row.kind,{'page.knowledge','page.ai','page.workbench'})
  if not page&permissions:return False

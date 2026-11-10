@@ -132,9 +132,10 @@ def route_permissions(path,method):
     if head=="platform":
         if len(parts)>1 and parts[1]=='assets':return [('page.ai','page.workbench')]
         return [("platform.keys.manage","platform.keys.admin","spaces.manage")]
-    if head in ("model-catalog","user-variables"):return [RUN_PERMISSIONS]
+    if head=="model-catalog":return []
+    if head=="user-variables":return [RUN_PERMISSIONS]
     if head in ("model-providers","model-provider-presets","models"):
-        return [("page.models",)] if method=="GET" else [("page.models",),("models.manage",)]
+        return []
     if head=="applications":
         if 'client-options' in parts:return [('applications.keys.manage',)]
         if "calls" in parts:return [("applications.records.read",)]
@@ -143,7 +144,7 @@ def route_permissions(path,method):
         return [("applications.read",)] if method=="GET" else [("applications.manage",)]
     if head=='builtin-agents':
         if parts[-1]=='workflow-preview' and method=='POST':return [('chunker.config.read','chunker.config.manage')]
-        if parts[-1] in {'document-jobs','document-job-options','document-job-budget'}:return [('page.ai','page.knowledge')]
+        if parts[-1] in {'document-jobs','document-job-options','document-job-budget','document-agent-choices'}:return [('page.ai','page.knowledge')]
         return [('chunker.config.view','chunker.config.read','chunker.config.manage')] if method=='GET' and len(parts)==1 else [('chunker.config.read','chunker.config.manage')] if method=='GET' else [('chunker.config.manage',)]
     if head=="run-approvers":return [RUN_PERMISSIONS]
     if head=="approvals":return [("runs.approve",)]

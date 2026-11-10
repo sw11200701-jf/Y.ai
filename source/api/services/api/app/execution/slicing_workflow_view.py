@@ -17,7 +17,8 @@ def effective(identifier, value):
     from app.knowledge.slicing_native_prompts import pin
     from app.knowledge.slicing_contracts import stage_settings
     configured=value.get('stage_prompts')
-    if identifier in SPECIALISTS:configured=prompts(identifier,configured)
+    strategy=value.get('strategy',identifier)
+    if strategy in SPECIALISTS:configured=prompts(strategy,configured)
     pinned=pin(configured)
     # Validate the real combined prompts now, not only the shorter editable text.
     stage_settings({k:{n:v[n] for n in ('system_prompt','user_prompt')} for k,v in pinned.items()})
@@ -27,11 +28,12 @@ def workflow_view(identifier,value):
     from .builtin_agents import RecipeOptions,portable_defaults
     from app.agents.slicing_specialists import SPECIALISTS
     stages=effective(identifier,value)
-    options=value.get('recipe_options') or portable_defaults(identifier)['recipe_options']
+    strategy=value.get('strategy',identifier)
+    options=value.get('recipe_options') or portable_defaults(strategy)['recipe_options']
     fields=deepcopy(RecipeOptions.model_json_schema()['properties'])
     for name,field in fields.items():field['default']=options[name]
     return {'contract':'slicing-workflow-view-v1','agent_id':identifier,'revision':value['revision'],
-        'strategy':deepcopy(SPECIALISTS.get(identifier)), 'effective_recipe_options':options,'recipe_option_schema':fields,
+        'strategy':deepcopy(SPECIALISTS.get(strategy)), 'effective_recipe_options':options,'recipe_option_schema':fields,
         'stages':[{'id':key,'name':name,'purpose':purpose,'inputs':inputs,'outputs':outputs,'execution':execution,
             'effective_system_prompt':stages[key]['system_prompt'],'effective_user_prompt':stages[key]['user_prompt']} for key,name,purpose,inputs,outputs,execution in STAGES],
         'before':{'name':'来源准备与任务准入','purpose':'校验原件、当前人员与资料权限、模型版本、完整请求预算；解析并固定原生版面和来源分组。'},

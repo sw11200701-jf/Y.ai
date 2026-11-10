@@ -10,7 +10,7 @@ from typing import Literal,Annotated
 from fastapi import APIRouter,Depends,Query
 from pydantic import BaseModel,ConfigDict,Field,field_validator,model_validator
 from app.context import get_context
-from app.db import SessionLocal,get_session,get_resource,save_resource,Resource,utc_now
+from app.db import SessionLocal,get_session,get_resource,new_id,Resource,utc_now
 from sqlalchemy import select
 from app.auth import validate_context
 from app.rbac import require_any_permission,audit
@@ -21,6 +21,25 @@ from app.agents.slicing_specialists import SPECIALISTS,select as select_speciali
 
 router=APIRouter(tags=['builtin-agents'])
 FIELDS={'model_config_id','prompt_override','recipe_version','stage_prompts','source_scope','recipe_options','model_execution_mode'}
+CUSTOM_PREFIX='slicing_agent_'
+
+
+class SlicingAgentWrite(BaseModel):
+    model_config=ConfigDict(extra='forbid',strict=True,str_strip_whitespace=True)
+    name:str=Field(min_length=1,max_length=100)
+    strategy:str=Field(min_length=1,max_length=100)
+    formats:list[str]=Field(min_length=1,max_length=20)
+
+
+def supported_formats(strategy):
+    from app.imports.document_container import SEMANTIC_FORMATS,canonical_format
+    spec=SPECIALISTS.get(strategy)
+    return sorted({kind for kind in SEMANTIC_FORMATS.values() if spec and canonical_format(kind) in spec['formats']})
+
+
+def check_formats(strategy, formats):
+    if not formats or len(set(formats))!=len(formats) or set(formats)-set(supported_formats(strategy)):
+        raise AppError('SLICING_FORMAT_MISMATCH','请选择与工作流策略相符的文件格式',422)
 
 class RecipeOptions(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)
@@ -40,6 +59,8 @@ class BuiltinSettingsPatch(BaseModel):
     source_scope:list[str]|None=Field(default=None,max_length=32)
     recipe_options:RecipeOptions|None=None
     model_execution_mode:Literal['auto','direct','model_default']|None=None
+    name:str|None=Field(default=None,min_length=1,max_length=100)
+    formats:list[str]|None=Field(default=None,min_length=1,max_length=20)
     @field_validator('stage_prompts')
     @classmethod
     def stages_valid(cls,value):
@@ -59,7 +80,8 @@ class BuiltinSettingsPatch(BaseModel):
         return value
 
 def require_builtin(identifier):
-    if identifier!=BUILTIN_ID and identifier not in SPECIALISTS:raise AppError('NOT_FOUND','内置Agent不存在',404)
+    if identifier!=BUILTIN_ID and identifier not in SPECIALISTS and not identifier.startswith(CUSTOM_PREFIX):
+        raise AppError('NOT_FOUND','切片智能体不存在',404)
 
 def authorize(session,context):
     validate_context(context,session)
@@ -77,6 +99,7 @@ def workspace_profile(session,context,identifier=BUILTIN_ID):
     validate_context(context,session)
     row=session.scalar(select(Resource).where(Resource.kind=='builtin_workspace_profile',Resource.resource_id==workspace_profile_id(context,identifier),Resource.tenant_id==context.tenant_id,Resource.workspace_id==context.workspace_id))
     if row:return json.loads(row.payload)
+    if identifier.startswith(CUSTOM_PREFIX):raise AppError('NOT_FOUND','切片智能体不存在',404)
     if identifier in SPECIALISTS:
         inherited=workspace_profile(session,context)
         return {**portable_defaults(identifier),**inherited,'revision':0,'inherited_revision':inherited['revision'],
@@ -86,7 +109,8 @@ def workspace_profile(session,context,identifier=BUILTIN_ID):
 def profile(session,context,identifier=BUILTIN_ID):
     authorize(session,context)
     shared=workspace_profile(session,context,identifier)
-    if identifier in SPECIALISTS:return {**shared,'profile_scope':'workspace','specialist_agent_id':identifier}
+    if identifier in SPECIALISTS or shared.get('strategy'):
+        return {**shared,'profile_scope':'workspace','specialist_agent_id':identifier}
     if shared['revision']>0:return {**shared,'profile_scope':'workspace'}
     # A prior personal profile is not exposed through the shared settings API.
     try:return {**get_resource(session,'builtin_agent_profile',profile_id(context),context),'profile_scope':'legacy_user'}
@@ -106,6 +130,44 @@ def portable_defaults(identifier=BUILTIN_ID):
     return {'recipe_version':RECIPE,'stage_prompts':{k:{'system_prompt':v['system_prompt'],'user_prompt':v['user_prompt']} for k,v in DEFAULTS['stages'].items()},'recipe_options':options}
 
 
+def custom_profiles(session,context):
+    rows=session.scalars(select(Resource).where(Resource.kind=='builtin_workspace_profile',
+        Resource.tenant_id==context.tenant_id,Resource.workspace_id==context.workspace_id).order_by(Resource.id))
+    return [value for row in rows if (value:=json.loads(row.payload)).get('id','').startswith(CUSTOM_PREFIX)]
+
+
+def save_profile(session,context,identifier,value):
+    row=session.scalar(select(Resource).where(Resource.kind=='builtin_workspace_profile',
+        Resource.resource_id==workspace_profile_id(context,identifier),Resource.tenant_id==context.tenant_id,
+        Resource.workspace_id==context.workspace_id))
+    payload=json.dumps(value,ensure_ascii=False);stamp=utc_now()
+    if row:
+        row.payload=payload;row.updated_at=stamp
+    else:
+        session.add(Resource(kind='builtin_workspace_profile',resource_id=workspace_profile_id(context,identifier),
+            tenant_id=context.tenant_id,workspace_id=context.workspace_id,owner_id='__system__',
+            payload=payload,created_at=stamp,updated_at=stamp))
+
+
+def apply_settings(identifier, value, body):
+    for name in FIELDS&body.model_fields_set:
+        item=getattr(body,name);value[name]=item.model_dump() if isinstance(item,BaseModel) else item
+    metadata={'name','formats'}&body.model_fields_set
+    if metadata and not value.get('strategy'):
+        raise AppError('BUILTIN_AGENT_PROTECTED','内置切片智能体的名称和格式由系统管理',422)
+    if 'name' in metadata:
+        if not body.name or not body.name.strip():raise AppError('VALIDATION_ERROR','请填写智能体名称',422)
+        value['name']=body.name.strip()
+    if 'formats' in metadata:
+        check_formats(value['strategy'],body.formats or [])
+        value['formats']=body.formats
+    if identifier in SPECIALISTS or value.get('strategy'):
+        if body.recipe_version is not None and body.recipe_version!='portable-slicing-1.0.0':
+            raise AppError('VALIDATION_ERROR','切片智能体使用语义审核工作流',422)
+        value['recipe_version']='portable-slicing-1.0.0'
+    return value
+
+
 def public(session,context,identifier=BUILTIN_ID):
     from app.execution.semantic_jobs import execution_available
     value=workspace_profile(session,context,identifier);status='waiting_configuration'
@@ -120,15 +182,50 @@ def public(session,context,identifier=BUILTIN_ID):
     except AppError as error:configuration_errors=[error.message]
     definition=builtin_definition()
     if identifier in SPECIALISTS:definition.update(id=identifier,name=SPECIALISTS[identifier]['name'],default_prompt=SPECIALISTS[identifier]['policy'])
+    if value.get('strategy'):
+        definition.update(id=identifier,name=value['name'],builtin=False,default_prompt=SPECIALISTS[value['strategy']]['policy'])
     return {**definition,'workflow':workflow,'configuration_errors':configuration_errors,'configuration_scope':'current_workspace','execution_identity':'current_caller',
         'execution_ready':execution_available() and status=='configured' and not configuration_errors,'capabilities':{'window_model_adapter':True,'durable_document_jobs':execution_available(),'atomic_document_draft':execution_available()},
-        'configuration_status':status,'editable_fields':sorted(FIELDS),'portable_recipe':portable_defaults(identifier),'config':{name:value.get(name) for name in ('revision','model_config_id','model_config_version',*FIELDS)}}
+        'configuration_status':status,'editable_fields':sorted(FIELDS),'portable_recipe':portable_defaults(value.get('strategy',identifier)),
+        'formats':value.get('formats',supported_formats(identifier)),'format_options':supported_formats(value.get('strategy',identifier)),
+        'config':{name:value.get(name) for name in ('revision','model_config_id','model_config_version',*FIELDS,'name','formats')}}
 
 @router.get('/builtin-agents')
 def builtin_agents(session=Depends(get_session),context=Depends(get_context)):
     require_any_permission(context,session,('chunker.config.view','chunker.config.read','chunker.config.manage'))
-    if set(context.permissions)&{'chunker.config.read','chunker.config.manage'}:return {'items':[public(session,context,identifier) for identifier in SPECIALISTS]}
-    return {'items':[{'id':identifier,'name':spec['name'],'builtin':True,'deletable':False,'configuration_scope':'current_workspace','configuration_status':'configured' if workspace_profile(session,context,identifier)['model_config_id'] else 'waiting_configuration','metadata_only':True} for identifier,spec in SPECIALISTS.items()]}
+    custom=custom_profiles(session,context)
+    if set(context.permissions)&{'chunker.config.read','chunker.config.manage'}:
+        items=[public(session,context,identifier) for identifier in [*SPECIALISTS,*(value['id'] for value in custom)]]
+        return {'items':items}
+    profiles=[{'id':identifier,'name':spec['name'],'formats':supported_formats(identifier),
+        'model_config_id':workspace_profile(session,context,identifier)['model_config_id']} for identifier,spec in SPECIALISTS.items()]
+    return {'items':[{'id':value['id'],'name':value['name'],'formats':value['formats'],'builtin':value['id'] in SPECIALISTS,
+        'deletable':False,'configuration_scope':'current_workspace','configuration_status':'configured' if value['model_config_id'] else 'waiting_configuration',
+        'metadata_only':True} for value in profiles+custom]}
+
+
+@router.post('/builtin-agents',status_code=201)
+def create_slicing_agent(body:SlicingAgentWrite,session=Depends(get_session),context=Depends(get_context)):
+    from app.rbac import require_permission
+    require_permission(context,session,'chunker.config.manage')
+    check_formats(body.strategy,body.formats)
+    identifier=new_id('slicing_agent')
+    value={**portable_defaults(body.strategy),**body.model_dump(),'id':identifier,'revision':1,
+           'model_config_id':None,'model_config_version':None,'prompt_override':None,'source_scope':None}
+    save_profile(session,context,identifier,value)
+    audit(session,context,'slicing_agent_create','slicing_agent',identifier)
+    session.flush()
+    return public(session,context,identifier)
+
+
+@router.get('/builtin-agents/document-agent-choices')
+def document_agent_choices(document_id:str,session=Depends(get_session),context=Depends(get_context)):
+    from app.knowledge.service import entry,raw_file
+    authorize(session,context)
+    document=entry('knowledge_document',document_id,context,session)
+    kind=raw_file(document,context,session)['format']
+    return {'items':[{'id':value['id'],'name':value['name']} for value in custom_profiles(session,context)
+                     if kind in value['formats'] and (not value.get('source_scope') or document['knowledge_base_id'] in value['source_scope'])]}
 
 @router.get('/builtin-agents/{identifier}')
 def builtin_agent(identifier:str,session=Depends(get_session),context=Depends(get_context)):
@@ -140,12 +237,7 @@ def preview_workflow(identifier:str,body:BuiltinSettingsPatch,session=Depends(ge
     require_builtin(identifier);require_any_permission(context,session,('chunker.config.read','chunker.config.manage'))
     value=workspace_profile(session,context,identifier)
     if value['revision']!=body.expected_revision:raise AppError('BUILTIN_CONFIG_CONFLICT','配置已变化，请读取并合并最新配置后再预览',409)
-    value=deepcopy(value)
-    for name in FIELDS&body.model_fields_set:
-        item=getattr(body,name);value[name]=item.model_dump() if isinstance(item,BaseModel) else item
-    if identifier in SPECIALISTS:
-        if body.recipe_version is not None and body.recipe_version!='portable-slicing-1.0.0':raise AppError('VALIDATION_ERROR','专用切片智能体使用固定的语义审核工作流',422)
-        value['recipe_version']='portable-slicing-1.0.0'
+    value=apply_settings(identifier,deepcopy(value),body)
     from .slicing_workflow_view import workflow_view
     return workflow_view(identifier,value)
 
@@ -161,19 +253,13 @@ def update_settings(identifier:str,body:BuiltinSettingsPatch,context=Depends(get
         if old['revision']!=body.expected_revision:raise AppError('BUILTIN_CONFIG_CONFLICT','配置已更新，请读取后合并',409)
         value=deepcopy(old)
         value.pop('inherited_revision',None)
-        for name in FIELDS&body.model_fields_set:
-            item=getattr(body,name);value[name]=item.model_dump() if isinstance(item,BaseModel) else item
-        if identifier in SPECIALISTS:
-            if body.recipe_version is not None and body.recipe_version!='portable-slicing-1.0.0':raise AppError('VALIDATION_ERROR','专用切片智能体使用固定的语义审核工作流',422)
-            value['recipe_version']='portable-slicing-1.0.0'
+        apply_settings(identifier,value,body)
         from .slicing_workflow_view import effective
         effective(identifier,value)
         value['model_config_version']=resolve_model(session,context,value['model_config_id']) if value['model_config_id'] else None
         if value!=old or old['revision']==0:
             value['revision']+=1
-            row=session.scalar(select(Resource).where(Resource.kind=='builtin_workspace_profile',Resource.resource_id==workspace_profile_id(context,identifier),Resource.tenant_id==context.tenant_id,Resource.workspace_id==context.workspace_id))
-            if row:row.payload=json.dumps(value,ensure_ascii=False);row.updated_at=utc_now()
-            else:session.add(Resource(kind='builtin_workspace_profile',resource_id=workspace_profile_id(context,identifier),tenant_id=context.tenant_id,workspace_id=context.workspace_id,owner_id='__system__',payload=json.dumps(value,ensure_ascii=False),created_at=utc_now(),updated_at=utc_now()))
+            save_profile(session,context,identifier,value)
             audit(session,context,'builtin_agent_configure','builtin_agent',identifier,{'revision':value['revision']})
         session.commit();return public(session,context,identifier)
 
@@ -263,6 +349,11 @@ def document_agent(session,context,document_id,identifier=BUILTIN_ID):
     from app.knowledge.service import entry,raw_file
     root=entry('knowledge_document',document_id,context,session)
     kind=raw_file(root,context,session)['format']
+    if identifier.startswith(CUSTOM_PREFIX):
+        value=workspace_profile(session,context,identifier)
+        if kind not in value['formats']:raise AppError('SLICING_FORMAT_MISMATCH','此智能体未配置为处理该文件格式',422)
+        if value.get('source_scope') and root['knowledge_base_id'] not in value['source_scope']:
+            raise AppError('SLICING_SCOPE_DENIED','此知识库不在该智能体的允许范围内',422)
     return select_specialist(kind) if identifier==BUILTIN_ID else identifier
 
 def execution_snapshot(session,context,*,document_model_choice=None,agent_id=BUILTIN_ID):
@@ -288,9 +379,11 @@ def execution_snapshot(session,context,*,document_model_choice=None,agent_id=BUI
     if choice:snapshot['document_model_choice']=choice
     if value.get('recipe_version')=='portable-slicing-1.0.0':
         snapshot.update({k:value.get(k) for k in ('recipe_version','stage_prompts','source_scope','recipe_options')})
-    if agent_id in SPECIALISTS:
-        snapshot.update(recipe_options=value.get('recipe_options') or portable_defaults(agent_id)['recipe_options'],recipe_version='portable-slicing-1.0.0',stage_prompts=specialist_prompts(agent_id,value.get('stage_prompts')),
-            specialist_policy_sha256=digest(SPECIALISTS[agent_id]),inherited_revision=value.get('inherited_revision'))
+    strategy=value.get('strategy',agent_id)
+    if strategy in SPECIALISTS:
+        snapshot.update(recipe_options=value.get('recipe_options') or portable_defaults(strategy)['recipe_options'],recipe_version='portable-slicing-1.0.0',stage_prompts=specialist_prompts(strategy,value.get('stage_prompts')),
+            specialist_policy_sha256=digest(SPECIALISTS[strategy]),inherited_revision=value.get('inherited_revision'))
+        if strategy!=agent_id:snapshot.update(strategy=strategy,formats=value['formats'])
     return snapshot
 
 
