@@ -125,7 +125,7 @@ curl --fail-with-body -sS -X PUT -H "Authorization: Bearer $TOKEN" \
 | `GET /knowledge/documents/{document_id}/chunks` | 可传 `version_id`、`offset`、`limit`、`q` 和 `enabled` |
 | `POST /knowledge/documents/{document_id}/revisions` | 提交最新 `base_version_id` 及 `corrections`、`additions`、`deletions` 中至少一项。返回新草稿版本 ID |
 | `POST /knowledge/documents/{document_id}/publish` | JSON `version_id`，必须是当前原件的最新有效知识版本 |
-| `GET /knowledge/documents/{document_id}/chunks/latest.xlsx` | 必传 `expected_version_id`。可用 `columns` 选择导出字段，返回 XLSX |
+| `GET /knowledge/documents/{document_id}/chunks/latest.xlsx` | 必传 `expected_version_id`。默认列为「序号、语义、原文段落」，可用 `columns` 选择附加字段 |
 | `POST /knowledge/search` | JSON `query`、`knowledge_base_ids`，可选 `file_ids`、`version_ids`、`top_k`（1–20）。返回命中及来源 |
 
 规则解析适用于运行实例报告的 `rule_formats`。需要语义切片的 PPT 和其他版面文件可先通过 API 入库，在知识库页面处理成草稿后，通过 API 编辑、发布和检索。
@@ -156,7 +156,7 @@ jq -n --arg kb "$KB_ID" --arg query '报销审批要求' '{knowledge_base_ids:[$
 
 ### 单条知识的查询和维护
 
-从切片列表、文档检索结果或 XLSX 的「知识ID」取得 `knowledge_id`，并使用该条知识所属的 `document_id`。文档检索命中的 `resource_id` 是文档 ID。修改同一条知识时，`knowledge_id` 跨人工修订保持一致；`item.id` 是当前版本内的切片 ID。整份重新切片可能产生新的知识条目和标识。
+从切片列表或文档检索结果取得 `knowledge_id`，并使用该条知识所属的 `document_id`。检索匹配语义概括、关键词和原文，响应中的 `semantic` 与 `original_paragraph` 分别提供概括和对应的原文。导出时可选「知识ID」附加列。文档检索命中的 `resource_id` 是文档 ID。修改同一条知识时，`knowledge_id` 跨人工修订保持一致；`item.id` 是当前版本内的切片 ID。整份重新切片可能产生新的知识条目和标识。
 
 以下路径相对 `/knowledge/documents/{document_id}`。
 

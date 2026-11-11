@@ -4,10 +4,10 @@ import math,re,json
 from openpyxl import Workbook
 from openpyxl.styles import Alignment,Font,PatternFill
 from .chunk_export import export_chunks,_authorized,_row,invalid
-from .customer_chunks import knowledge_content,knowledge_id
+from .customer_chunks import knowledge_content,knowledge_id,source_paragraphs,semantic
 from . import service as s
 
-CONTRACT='customer-text-two-columns-v1'
+CONTRACT='customer-semantic-three-columns-v1'
 HEADERS=['知识ID','知识内容']
 
 def _semantic_location(chunk,filename):
@@ -83,9 +83,11 @@ def export_customer(*,document_id,version_id,context,session,columns=None):
     base_rows=portable_rows if portable else [[knowledge_id(chunk,version_id,i),knowledge_content(chunk)]
                                              for i,chunk in enumerate(chunks,1)]
     if len(base_rows)!=len(chunks):invalid('完整版本的切片与导出行数不一致')
-    for chunk,values in zip(chunks,base_rows):
+    originals=source_paragraphs(chunks,lambda:file)
+    for number,(chunk,values,original) in enumerate(zip(chunks,base_rows,originals),1):
         record=dict(zip(('knowledge_id','knowledge_content'),values))
-        if len(selected)>2:record.update(metadata_values(chunk,version,file))
+        record.update(sequence=number,semantic=semantic({**chunk,'original_text':original}),original_paragraph=original)
+        if set(selected)-record.keys():record.update(metadata_values(chunk,version,file))
         _row(ws,[record[key] for key in selected])
     ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions;ws.sheet_view.showGridLines=False
     from openpyxl.utils import get_column_letter

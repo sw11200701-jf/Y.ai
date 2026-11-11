@@ -417,8 +417,12 @@ def version_decision(version, root, context, session):
     return replace(authorized, layers=layers)
 
 def visible_chunks(version, root, context, session, *, chunk_ids=None):
+    from .customer_chunks import source_paragraphs
     authorized = version_decision(version, root, context, session)
     rows = presented_chunks(version, root)
+    originals = source_paragraphs(rows, lambda: raw_file({**root, 'file_id': version['file_id']}, context, session))
+    for row, original in zip(rows, originals):
+        row['original_text'] = original
     fields = list(dict.fromkeys(key for row in rows for key in row))
     allowed, masks = _column_policy(authorized, fields)
     required = {"text", "id", "enabled", "source_ref"}
@@ -447,8 +451,10 @@ def version_chunks(*, version_id, offset, limit, context, session, q="", enabled
     root = entry(value["resource_kind"], value["resource_id"], context, session)
     checked_version(version_id, root, context, session)
     chunks = visible_chunks(value, root, context, session)
-    from .customer_chunks import text as customer_text
-    filtered = [c for c in chunks if (not q or q.casefold() in c["text"].casefold()) and (enabled is None or c.get("enabled", True) == enabled)]
+    from .customer_chunks import presentation, text as customer_text
+    chunks = [{**chunk, **presentation(chunk)} for chunk in chunks]
+    filtered = [c for c in chunks if (not q or any(q.casefold() in c[key].casefold()
+        for key in ("semantic", "original_paragraph", "text"))) and (enabled is None or c.get("enabled", True) == enabled)]
     return {"version_id": version_id, "snapshot_id": value["content_sha256"], "source_sha256": value.get("source_sha256"),
             "total": len(filtered), "chunk_count": len(chunks), "enabled_chunk_count": sum(c.get("enabled", True) for c in chunks),
             "disabled_chunk_count": sum(not c.get("enabled", True) for c in chunks), "chunking": value.get("chunking", {"strategy": "legacy"}),
@@ -465,7 +471,7 @@ def document_chunks(*, document_id, version_id, context, session, **options):
 
 
 def knowledge_item(*, document_id, identifier, context, session, version_id=None, for_update=False):
-    from .customer_chunks import historical_id, knowledge_id, text as customer_text
+    from .customer_chunks import historical_id, knowledge_id, presentation, text as customer_text
     root = entry('knowledge_document', document_id, context, session, write=for_update)
     head = root.get('draft_version_id') or root.get('published_version_id')
     if for_update:
@@ -488,7 +494,7 @@ def knowledge_item(*, document_id, identifier, context, session, version_id=None
     item = matches[0]
     if for_update and item.get('knowledge_id') != aliases[item['id']]:
         raise AppError('DATA_SCOPE_WRITE_DENIED', '单条知识修改需要可读取的知识标识', 403)
-    return {'version_id': selected, 'item': {**item, 'display_text': customer_text(item)}}
+    return {'version_id': selected, 'item': {**item, **presentation(item), 'display_text': customer_text(item)}}
 
 def record_parse_failure(*, document_id, options, error, context, session):
     root = entry("knowledge_document", document_id, context, session, write=True)
@@ -621,6 +627,7 @@ async def search_knowledge(*, query, knowledge_base_ids, context, session, file_
                 continue
         current.append(version)
     selected=current
+    from .customer_chunks import presentation, semantic
     ranked = []
     for version in selected:
         root = entry(version["resource_kind"], version["resource_id"], context, session)
@@ -628,10 +635,12 @@ async def search_knowledge(*, query, knowledge_base_ids, context, session, file_
         for chunk in visible:
             if not chunk.get("enabled", True): continue
             if not chunk.get("text") or chunk["text"] == "***": continue
-            match = match_chunk(search_query, chunk["text"])
-            if match is None: continue
-            matched, score = match
-            ranked.append({**chunk, "knowledge_base_id": version["knowledge_base_id"], "resource_id": version["resource_id"],
+            matches = [match_chunk(search_query, value) for value in
+                       (semantic(chunk, fallback=False), chunk["text"], chunk.get("original_text") or "") if value]
+            matches = [match for match in matches if match is not None]
+            if not matches: continue
+            matched, score = max(matches, key=lambda match: Decimal(match[1]))
+            ranked.append({**chunk, **presentation(chunk), "knowledge_base_id": version["knowledge_base_id"], "resource_id": version["resource_id"],
                            "version_id": version["id"], "snapshot_id": version["content_sha256"], "source_sha256": version.get("source_sha256"), "matched_terms": matched,
                            "score": score})
     ranked.sort(key=lambda h: (-Decimal(h["score"]), h["version_id"], h["id"]))

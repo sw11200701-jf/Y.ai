@@ -27,7 +27,7 @@ def export_latest_knowledge(document_id:str,request:Request,expected_version_id:
         'X-Export-Format':meta['format'],'X-Export-Columns':','.join(meta['columns']),'X-Knowledge-Selection':'latest-saved'})
 
 @router.get('/knowledge/documents/{document_id}/versions/{version_id}/chunks/customer.xlsx' ,response_class=Response,
-    summary='导出两列语义知识切片',responses={200:{'description':'完整版本的两列语义知识切片Excel'}})
+    summary='导出序号、语义和原文段落',responses={200:{'description':'完整版本的三列语义知识切片Excel'}})
 def export_customer_chunks(document_id:str,version_id:str,request:Request,session:Session=Depends(get_session),context:BusinessContext=Depends(get_context)):
     if request.query_params:raise AppError('VALIDATION_ERROR','导出完整版本，不接受分页或筛选参数',422)
     from .customer_export import export_customer
@@ -39,7 +39,7 @@ def export_customer_chunks(document_id:str,version_id:str,request:Request,sessio
         'X-Source-Span-Count':str(metadata['span_count']),'X-Export-Scope':metadata['scope'],'X-Export-Format':metadata['format']})
 
 @router.get('/knowledge/documents/{document_id}/versions/{version_id}/chunks/selected.xlsx',response_class=Response,summary='按所选字段导出完整知识版本')
-def export_selected_chunks(document_id:str,version_id:str,request:Request,columns:str=Query(default='knowledge_id,knowledge_content',max_length=256),session:Session=Depends(get_session),context:BusinessContext=Depends(get_context)):
+def export_selected_chunks(document_id:str,version_id:str,request:Request,columns:str=Query(default='sequence,semantic,original_paragraph',max_length=256),session:Session=Depends(get_session),context:BusinessContext=Depends(get_context)):
     if set(request.query_params)-{'columns'} or len(request.query_params.getlist('columns'))>1:raise AppError('VALIDATION_ERROR','仅接受columns选择字段，不接受分页或筛选',422)
     from .customer_export import export_customer
     from .chunk_export import MIME

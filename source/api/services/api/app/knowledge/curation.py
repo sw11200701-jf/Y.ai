@@ -71,9 +71,10 @@ async def revise(*, document_id, corrections, context, session, base_version_id=
         raise AppError('KNOWLEDGE_SOURCE_REPLACED', '原件已更换，请先处理新原件再修订知识', 409)
     verify(previous, context=context, session=session)
     chunks = deepcopy(previous['chunks']); by_id = {c['id']:c for c in chunks}; seen = set()
-    from .customer_chunks import knowledge_id
+    from .customer_chunks import knowledge_id, original_paragraph
     for index, chunk in enumerate(chunks, 1):
         chunk['knowledge_key'] = knowledge_id(chunk, head, index)
+        chunk.setdefault('original_text', original_paragraph(chunk))
     for item in corrections:
         cid = item['chunk_id']
         if cid in seen or cid not in by_id or cid in deletions:

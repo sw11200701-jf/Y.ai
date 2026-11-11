@@ -1,14 +1,17 @@
 """Explicit customer metadata projection; never infer missing business facts."""
 import json
 from .chunk_export import invalid
-DEFAULT_COLUMNS=('knowledge_id','knowledge_content')
+DEFAULT_COLUMNS=('sequence','semantic','original_paragraph')
+LEGACY_COLUMNS=('knowledge_id','knowledge_content')
 SELECTION_CONTRACT='customer-selected-columns-v1'
-COLUMNS={'knowledge_id':('知识ID',24),'knowledge_content':('知识内容',124),'source_file':('来源文件',44),'version_id':('知识版本ID',44),'source_location':('原文位置',80),'knowledge_layer':('知识层级',24),'applicable_scope':('适用范围',60),'enabled':('启用状态',16)}
+COLUMNS={'sequence':('序号',10),'semantic':('语义',62),'original_paragraph':('原文段落',100),
+         'knowledge_id':('知识ID',24),'knowledge_content':('知识内容',124),'source_file':('来源文件',44),'version_id':('知识版本ID',44),'source_location':('原文位置',80),'knowledge_layer':('知识层级',24),'applicable_scope':('适用范围',60),'enabled':('启用状态',16)}
 
 def select_columns(value=None):
     if value is None:return DEFAULT_COLUMNS
     if not isinstance(value,(tuple,list)) or not 2<=len(value)<=len(COLUMNS) or any(type(k) is not str or k not in COLUMNS for k in value):invalid('导出列包含未知字段或数量无效')
-    if len(set(value))!=len(value) or tuple(value[:2])!=DEFAULT_COLUMNS:invalid('知识ID和知识内容须为前两列，其余字段不可重复')
+    if len(set(value))!=len(value) or (tuple(value[:3])!=DEFAULT_COLUMNS and tuple(value[:2])!=LEGACY_COLUMNS):
+        invalid('导出须以序号、语义、原文段落开头，字段不可重复')
     return tuple(value)
 
 def text(value):

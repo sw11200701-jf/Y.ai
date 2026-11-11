@@ -114,6 +114,16 @@ def check():
             item_path = f'{doc_path}/items/{knowledge}'
             workbook = load_workbook(BytesIO(exported.content), read_only=True)
             try:
+                assert list(workbook.active.values) == [
+                    ('序号', '语义', '原文段落'),
+                    (1, 'Updated invoice reimbursement evidence.', 'Replacement invoice reimbursement rules.'),
+                ]
+            finally:
+                workbook.close()
+            legacy = call('GET', doc_path + '/chunks/latest.xlsx', params={'expected_version_id': saved,
+                'columns': 'knowledge_id,knowledge_content'})
+            workbook = load_workbook(BytesIO(legacy.content), read_only=True)
+            try:
                 assert workbook.active['A2'].value == knowledge
             finally:
                 workbook.close()
@@ -121,9 +131,9 @@ def check():
             assert call('GET', item_path, params={'version_id': draft}).json()['item']['text'] != 'Updated invoice reimbursement evidence.'
             assert call('GET', f"{doc_path}/items/{chunks[0]['id']}", params={'version_id': draft}).json()['item']['knowledge_id'] == knowledge
             modified = call('PATCH', item_path, json={'base_version_id': saved,
-                'topic': 'Invoice evidence', 'text': 'Final invoice reimbursement evidence.', 'enabled': False}).json()
+                'topic': 'Invoice evidence triangulation', 'text': 'Final invoice reimbursement evidence.', 'enabled': False}).json()
             assert modified['requires_publish'] and modified['item']['knowledge_id'] == knowledge
-            assert modified['item']['topic'] == 'Invoice evidence' and not modified['item']['enabled']
+            assert modified['item']['topic'] == 'Invoice evidence triangulation' and not modified['item']['enabled']
             assert search('invoice reimbursement')[0]['text'] == 'Updated invoice reimbursement evidence.'
             call('PATCH', item_path, 409, json={'base_version_id': saved, 'enabled': True})
             added = call('POST', doc_path + '/items', 201, json={'base_version_id': modified['version_id'],
@@ -138,6 +148,9 @@ def check():
             call('POST', doc_path + '/publish', json={'version_id': enabled['version_id']})
             assert search('invoice reimbursement')[0]['knowledge_id'] == knowledge
             assert search('invoice reimbursement')[0]['text'] == 'Final invoice reimbursement evidence.'
+            hit = search('triangulation')[0]
+            assert 'triangulation' in hit['semantic']
+            assert hit['original_paragraph'] == 'Replacement invoice reimbursement rules.'
 
             read_only = token(client, key(owner, workspace, access='read', all_resources=True))
             call('PATCH', item_path, 404, headers={'Authorization': f'Bearer {read_only}'},
