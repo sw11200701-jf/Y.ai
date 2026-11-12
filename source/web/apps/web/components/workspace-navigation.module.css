@@ -1,14 +1,14 @@
 .navigation{position:relative;isolation:isolate;flex-shrink:0}
-.indicator{position:absolute;left:0;top:0;z-index:0;pointer-events:none;border:1px solid #fff;border-radius:12px;background:linear-gradient(120deg,#f7f9fd,#e8eef7);box-shadow:0 4px 13px #5c657512,inset 0 1px 0 #fff}
-.navigation[data-animated=true] .indicator{transition:transform 260ms cubic-bezier(.22,.8,.25,1),width 220ms ease,height 220ms ease}
+.indicator{position:absolute;left:0;top:0;z-index:0;pointer-events:none;border:1px solid #fff;border-radius:12px;background:linear-gradient(155deg,#fcfdff,#edf3ff);box-shadow:0 3px 10px #4a63b112,inset 0 1px 0 #fff}
+.navigation[data-animated=true] .indicator{transition:transform 240ms cubic-bezier(.22,.8,.25,1),width 220ms ease,height 220ms ease}
 .navigation .item{position:relative;z-index:1;cursor:pointer;transition:color 150ms ease,background-color 150ms ease,transform 120ms ease;white-space:nowrap}
 .navigation .item:global(.active){background:transparent;box-shadow:none;border-color:transparent}
 .navigation .item:active{transform:scale(.985)}
 .navigation .item:focus-visible{outline:2px solid #7b91b1;outline-offset:-2px}
-.dot{animation:dot-in 180ms ease-out}
-.pageFrame{min-width:0;animation:page-in 190ms cubic-bezier(.22,.8,.25,1)}
+.indicator::before{content:"";position:absolute;inset:8px auto 8px 0;width:3px;border-radius:4px;background:#7a9bd6}
+.group{padding:9px 11px 4px;color:var(--text-muted);font-size:11px;font-weight:600}
+.pageFrame{min-width:0;animation:page-in 180ms cubic-bezier(.22,.8,.25,1)}
 .canvasFrame{display:contents}
-@keyframes page-in{from{opacity:.45;transform:translateY(5px)}to{opacity:1;transform:none}}
-@keyframes dot-in{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:scale(1)}}
-@media(max-width:700px){.navigation{scrollbar-width:thin;scroll-padding-inline:12px;overscroll-behavior-x:contain}.navigation::-webkit-scrollbar{height:4px}.navigation .item{width:auto;flex:0 0 auto}.indicator{box-shadow:inset 0 1px 0 #fff}}
-@media(prefers-reduced-motion:reduce){.navigation[data-animated=true] .indicator,.navigation .item{transition:none!important}.dot,.pageFrame{animation:none!important}.navigation .item:active{transform:none}}
+@keyframes page-in{from{opacity:.45;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media(max-width:700px){.group{display:none}.navigation{scrollbar-width:thin;scroll-padding-inline:12px;overscroll-behavior-x:contain}.navigation::-webkit-scrollbar{height:4px}.navigation .item{width:auto;flex:0 0 auto}.indicator{box-shadow:inset 0 1px 0 #fff}}
+@media(prefers-reduced-motion:reduce){.navigation[data-animated=true] .indicator,.navigation .item{transition:none!important}.pageFrame{animation:none!important}.navigation .item:active{transform:none}}

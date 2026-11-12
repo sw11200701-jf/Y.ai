@@ -27,21 +27,24 @@ import WorkspaceLogs from './workspace-logs';
 import { SupportReference } from './shared';
 import { canOpenPage } from '@/lib/permissions';
 import { errorMessage } from '@/lib/errors';
+const workspaceGroup = '工作空间';
+const resourcesGroup = '资源与运行';
+const adminGroup = '管理';
 const pages = [
-  { id: 'workbench', title: menuLabels.workbench, icon: <DashboardOutlined /> },
-  { id: 'agents', title: menuLabels.agents, icon: <RobotOutlined /> },
-  { id: 'data', title: menuLabels.data, icon: <DatabaseOutlined /> },
-  { id: 'plugins', title: menuLabels.plugins, icon: <LinkOutlined /> },
-  { id: 'models', title: menuLabels.models, icon: <RobotOutlined /> },
-  {id:'platform-access',title:'平台 API 与空间',icon:<LinkOutlined/>},
-  {id:'asset-api',title:'API 接入配置',icon:<LinkOutlined/>},
-  { id: 'applications', title: menuLabels.applications, icon: <LinkOutlined /> },
-  { id: 'runs', title: menuLabels.runs, icon: <FileTextOutlined /> },
-  { id: 'approvals', title: menuLabels.approvals, icon: <SafetyCertificateOutlined /> },
-  { id: 'accounts', title: menuLabels.accounts, icon: <UserOutlined /> },
-  { id: 'chunker-settings', title:'知识切片配置', icon:<RobotOutlined/> },
-  { id: 'roles', title: menuLabels.roles, icon: <SafetyCertificateOutlined /> },
-  { id: 'workspace-logs', title: '系统日志', icon: <FileTextOutlined /> },
+  { id: 'workbench', group: workspaceGroup,  title: menuLabels.workbench, icon: <DashboardOutlined /> },
+  { id: 'agents', group: workspaceGroup,  title: menuLabels.agents, icon: <RobotOutlined /> },
+  { id: 'data', group: workspaceGroup,  title: menuLabels.data, icon: <DatabaseOutlined /> },
+  { id: 'plugins', group: resourcesGroup,  title: menuLabels.plugins, icon: <LinkOutlined /> },
+  { id: 'models', group: resourcesGroup,  title: menuLabels.models, icon: <RobotOutlined /> },
+  { id: 'runs', group: resourcesGroup,  title: menuLabels.runs, icon: <FileTextOutlined /> },
+  { id: 'approvals', group: resourcesGroup,  title: menuLabels.approvals, icon: <SafetyCertificateOutlined /> },
+  {id: 'platform-access', group: adminGroup, title:'平台 API 与空间',icon:<LinkOutlined/>},
+  {id: 'asset-api', group: adminGroup, title:'API 接入配置',icon:<LinkOutlined/>},
+  { id: 'applications', group: adminGroup,  title: menuLabels.applications, icon: <LinkOutlined /> },
+  { id: 'accounts', group: adminGroup,  title: menuLabels.accounts, icon: <UserOutlined /> },
+  { id: 'chunker-settings', group: adminGroup,  title:'知识切片配置', icon:<RobotOutlined/> },
+  { id: 'roles', group: adminGroup,  title: menuLabels.roles, icon: <SafetyCertificateOutlined /> },
+  { id: 'workspace-logs', group: adminGroup,  title: '系统日志', icon: <FileTextOutlined /> },
 ];
 export default function Console() { return <AuthGate><ConsoleBody /></AuthGate>; }
 function ConsoleBody() {
@@ -68,8 +71,8 @@ function ConsoleBody() {
   const allowed=canOpenPage(session.user,page);const fullCanvas=canvas&&allowed&&!accessLost;
   const denialReference=<SupportReference value={accessDiagnostic?.request_id}/>;
   return <div className={fullCanvas?'shell canvas-shell':'shell'}>
-    <aside className="sidebar"><a className="brand" href="/?page=workbench"><span className="brand-mark">Y</span><span>Y.ai</span></a><div className="workspace"><span className="workspace-icon">Y</span><div>{session.workspace?.name || '我的工作空间'}</div></div><div className="nav-label">WORKSPACE / 工作空间</div><WorkspaceNavigation items={pages.filter(p=>p.id!=='asset-api'&&p.id!=='applications'&&!permissionsChecking&&canOpenPage(session.user,p.id)&&(p.id!=='applications'||cap?.application_api?.enabled===true))} selected={page} onNavigate={id=>void navigate(id)}/><div className="sidebar-bottom"><SafetyCertificateOutlined /><p>{session.user.display_name || session.user.username}</p><Button size="small" type="text" icon={<LogoutOutlined />} onClick={() => void logout()}>退出登录</Button>{!permissionsChecking&&canOpenPage(session.user,"finance-sample")&&<button className="sample-link" onClick={() => navigate('finance-sample')}>场景样例 · 财务分析</button>}</div></aside>
-    <div className="main"><header className="topbar"><div>Y.ai <span className="top-slash">/</span> <strong>{pages.find(p => p.id === page)?.title || '财务分析样例'}</strong></div><div className="top-right"><Badge status={checking ? 'processing' : error ? 'error' : 'success'} text={checking ? '检查服务中' : error ? '服务连接失败' : '服务已连接'} /><Button aria-label="刷新服务状态" type="text" icon={<ReloadOutlined />} onClick={() => void load()} />{!permissionsChecking&&canOpenPage(session.user,"accounts")&&<Button className="account-button" type="text" onClick={() => navigate('accounts')}><UserOutlined />{session.user.display_name || session.user.username}</Button>}<Button className="mobile-logout" aria-label="退出登录" type="text" icon={<LogoutOutlined />} onClick={() => void logout()} /></div></header>
+    <aside className="sidebar"><a className="brand" href="/?page=workbench"><span className="brand-mark">Y</span><span className="brand-name">Y.ai <small>章谱</small></span></a><div className="workspace"><span className="workspace-icon">Y</span><div>{session.workspace?.name || '我的工作空间'}</div></div><WorkspaceNavigation items={pages.filter(p=>p.id!=='asset-api'&&p.id!=='applications'&&!permissionsChecking&&canOpenPage(session.user,p.id)&&(p.id!=='applications'||cap?.application_api?.enabled===true))} selected={page} onNavigate={id=>void navigate(id)}/><div className="sidebar-bottom"><SafetyCertificateOutlined /><p>{session.user.display_name || session.user.username}</p><Button size="small" type="text" icon={<LogoutOutlined />} onClick={() => void logout()}>退出登录</Button>{!permissionsChecking&&canOpenPage(session.user,"finance-sample")&&<button className="sample-link" onClick={() => navigate('finance-sample')}>场景样例 · 财务分析</button>}</div></aside>
+    <div className="main"><header className="topbar"><div className="top-trail"><span className="top-workspace">{session.workspace?.name || '我的工作空间'}</span> <span className="top-slash" aria-hidden="true">/</span> <strong>{pages.find(p => p.id === page)?.title || '财务分析样例'}</strong></div><div className="top-right"><Badge status={checking ? 'processing' : error ? 'error' : 'success'} text={checking ? '检查服务中' : error ? '服务连接失败' : '服务已连接'} /><Button aria-label="刷新服务状态" type="text" icon={<ReloadOutlined />} onClick={() => void load()} />{!permissionsChecking&&canOpenPage(session.user,"accounts")&&<Button className="account-button" type="text" onClick={() => navigate('accounts')}><UserOutlined />{session.user.display_name || session.user.username}</Button>}<Button className="mobile-logout" aria-label="退出登录" type="text" icon={<LogoutOutlined />} onClick={() => void logout()} /></div></header>
     <main className="content" tabIndex={0} aria-label={`${pages.find(p=>p.id===page)?.title||'工作空间'}内容`}>{checking ? <section className="panel bootstrap-state" role="status"><span className="loading-orbit"/><h1>正在准备工作空间</h1><p>加载能力与当前账号的资源…</p></section> : error ? <Alert type="error" showIcon message="服务连接未完成" description={error} action={<Button onClick={() => void load()}>重试</Button>} /> : <>
       {permissionsChecking&&<section className="panel" role="status">正在重新确认访问权限…</section>}<div hidden={permissionsChecking} style={{display:permissionsChecking?'none':'contents'}}>
       {!allowed ? <section className="panel" role="alert"><h1>当前账号无法进入此页面</h1><p>请联系管理员调整界面权限，或从左侧选择已授权的功能。</p>{denialReference}</section> : accessLost ? <section className="panel" role="alert"><h1>当前内容已无法访问</h1><p>访问范围已变化或内容已移除，先前加载的资料已清空。</p>{denialReference}<Button onClick={()=>void navigate(page==='data'?`?page=data&section=${new URLSearchParams(location.search).get('section')==='databases'?'databases':'knowledge'}`:`?page=${page}`)}>返回列表重新加载</Button></section> : <>
