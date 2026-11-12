@@ -17,7 +17,7 @@ const downloads=new WeakMap<FileExportPrepared,{blob:Blob;epoch:number;policy:nu
 let policyRevision=0;
 const policyEvents=['zhangpu:session-expired','zhangpu:access-denied','zhangpu:data-policy-changed','zhangpu:permissions-changed'];
 if(typeof window!=='undefined')policyEvents.forEach(event=>window.addEventListener(event,()=>{policyRevision++;}));
-const formatLabels:Record<string,string>={'native-json':'Y.ai JSON','native-yaml':'Y.ai YAML','dify-yaml':'Dify DSL YAML',unknown:'未识别格式'};
+const formatLabels:Record<string,string>={'native-json':'Yai JSON','native-yaml':'Yai YAML','dify-yaml':'Dify DSL YAML',unknown:'未识别格式'};
 const nodeTypeLabels:Record<string,string>={start:'开始',input:'输入',end:'结束',answer:'回复',output:'输出',llm:'大语言模型',template:'模板转换',condition:'条件分支',agent:'智能体',plugin:'工具',http:'HTTP服务',knowledge_retrieval:'知识检索',document_extractor:'文档提取',database_query:'数据库查询',iteration:'迭代',loop:'循环'};
 const kindLabels:Record<string,string>={model:'模型配置',plugin:'工具与连接',knowledge:'知识资料',document:'文件资料',database:'数据库',table:'数据表版本',agent:'智能体版本',workflow:'工作流',connection:'连接',batch:'数据批次'};
 const validText=(value:unknown):value is string=>typeof value==='string'&&value.length>0;

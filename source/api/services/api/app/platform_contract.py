@@ -36,7 +36,7 @@ def contract(app):
             pending.extend(references(available[name]))
     return {
         'openapi': source['openapi'],
-        'info': {'title': '章谱平台 API', 'version': '1.0',
+        'info': {'title': 'Yai 平台 API', 'version': '1.0',
                  'description': '工作流与 Agent 固定版本调用，授权知识库维护和检索，以及结构化数据库和数据表管理。'},
         'servers': [{'url': '/'}], 'paths': paths,
         'components': {'securitySchemes': {'PlatformBearer': {'type': 'http', 'scheme': 'bearer',
@@ -47,7 +47,7 @@ def contract(app):
 @manage.get('/platform/contract', summary='下载平台 API 的 OpenAPI JSON')
 def download_contract(request: Request, session=Depends(get_session)):
     _human(request, session, 'platform.directory')
-    return JSONResponse(contract(request.app), headers={'Content-Disposition': 'attachment; filename="zhangpu-platform-openapi.json"'})
+    return JSONResponse(contract(request.app), headers={'Content-Disposition': 'attachment; filename="yai-platform-openapi.json"'})
 
 
 @runtime.get('/openapi.json', summary='读取平台 API 的 OpenAPI JSON')

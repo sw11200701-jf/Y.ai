@@ -339,7 +339,7 @@ def export(workflow, diagnostics, target_version, model_bindings):
                     data['variables'].append(variable)
             elif typ in {'end', 'output', 'answer'}:
                 if typ == 'output' and config.get('presentation') == 'json':
-                    c.block(loc + '.config.presentation', 'Dify end无法等价表达章谱typed JSON展示配置；请使用原生JSON/YAML保留presentation=json', 'DIFY_JSON_PRESENTATION_UNSUPPORTED')
+                    c.block(loc + '.config.presentation', 'Dify end无法等价表达 Yai typed JSON展示配置；请使用原生JSON/YAML保留presentation=json', 'DIFY_JSON_PRESENTATION_UNSUPPORTED')
                     continue
                 if config:
                     raise ValueError()
@@ -351,7 +351,7 @@ def export(workflow, diagnostics, target_version, model_bindings):
                 data.update(type='end', outputs=[{'variable': key, 'value_selector': selector(value)} for key, value in inputs.items()])
             elif typ == 'if_else':
                 if 'conditions' in inputs or 'logical_operator' in config:
-                    c.block(loc, '章谱AND/OR嵌套条件组与目标Dify条件的类型、短路及空值语义尚未验证等价', 'DIFY_CONDITION_GROUP_UNSUPPORTED')
+                    c.block(loc, 'Yai AND/OR嵌套条件组与目标Dify条件的类型、短路及空值语义尚未验证等价', 'DIFY_CONDITION_GROUP_UNSUPPORTED')
                     continue
                 if set(config) != {'operator'} or set(inputs) != {'left', 'right'} or config['operator'] not in OPS.values() or not isinstance(inputs['right'], str):
                     raise ValueError()

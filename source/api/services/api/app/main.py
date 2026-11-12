@@ -67,7 +67,7 @@ async def lifespan(app):
     yield
     await scheduler.stop()
 
-app = FastAPI(title="Y.ai", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="Yai", version="2.0.0", lifespan=lifespan)
 from app.machine_auth import RuntimeBodyLimitMiddleware
 app.add_middleware(RuntimeBodyLimitMiddleware)
 try:

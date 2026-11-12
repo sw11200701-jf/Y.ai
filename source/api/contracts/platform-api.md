@@ -1,4 +1,4 @@
-# 章谱平台 API v1
+# Yai 平台 API v1
 
 工作流、Agent、知识库和结构化数据库共用平台密钥及空间授权。以下路径以 `/api/platform/v1` 为前缀。生产环境使用部署方提供的 HTTPS 地址。
 
@@ -89,7 +89,7 @@ curl --fail-with-body -sS -H "Authorization: Bearer $TOKEN" "$SPACE/runs/$RUN_ID
 | `PATCH /knowledge/documents/{document_id}` | 发送 `If-Match`，JSON `name` 修改显示名称 |
 | `GET /knowledge-bases/{kb_id}/documents/by-external-id/{external_id}` | 用业务系统的文档 ID 查询和读取 `ETag` |
 | `PUT /knowledge-bases/{kb_id}/documents/by-external-id/{external_id}` | 按业务 ID 首次创建或更新原件，multipart 字段 `file` |
-| `PUT /knowledge/documents/{document_id}/original` | 按章谱文档 ID 更新原件，multipart 字段 `file` |
+| `PUT /knowledge/documents/{document_id}/original` | 按 Yai 文档 ID 更新原件，multipart 字段 `file` |
 | `GET /knowledge/files/{file_id}/download` | 下载有权限的当前或历史原件 |
 | `DELETE /knowledge/documents/{document_id}` / `DELETE /knowledge-bases/{kb_id}` | 移入回收站 |
 | `POST /knowledge/documents/{document_id}/restore` / `POST /knowledge-bases/{kb_id}/restore` | 从回收站恢复 |
@@ -181,7 +181,7 @@ jq -n --arg version "$VERSION_ID" --arg text '更新后的知识正文' \
 
 ## 4. 数据库与数据表
 
-本节路径相对 `/spaces/{workspace_id}`。数据库是章谱内用于管理结构化数据的业务资源。查询提交受控条件，接口使用空间权限、行列授权和已发布数据版本。
+本节路径相对 `/spaces/{workspace_id}`。数据库是 Yai 内用于管理结构化数据的业务资源。查询提交受控条件，接口使用空间权限、行列授权和已发布数据版本。
 
 | 方法与路径 | 请求及结果 |
 | --- | --- |

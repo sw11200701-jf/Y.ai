@@ -1,4 +1,4 @@
-# 章谱 — authentication/ownership/message contract (2026-10-19) READY FOR IMPLEMENTATION
+# Yai — authentication/ownership/message contract (2026-10-19) READY FOR IMPLEMENTATION
 
 2026-10-20增量以 `docs/coordination/round3-rbac-contract.md` 与 `data-access-contract-20261020.md` 为准：新增super_admin/多角色、data页和动作、服务器一次性初始/重置密码及首次改密，旧用户密码/session不变。下文二级角色及手输创建/重置密码形状是历史基线，不可据此实现本轮新UI。用户环境已经初始化，本轮只在临时副本预检，尚未切换用户/旧QA服务。
 

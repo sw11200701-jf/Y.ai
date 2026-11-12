@@ -18,7 +18,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     const id = ++generation.current; setState('checking'); setError('');
     try {
       const status = await request('/auth/status'); if (id !== generation.current) return;
-      if (!status.authentication_required) throw Error('当前服务未启用身份保护。请连接Y.ai鉴权候选 API。');
+      if (!status.authentication_required) throw Error('当前服务未启用身份保护。请连接Yai鉴权候选 API。');
       if (!status.initialized) { setState('setup'); return; }
       try { const me = await request<Session & {csrf_token:string}>('/auth/me'); if (id !== generation.current) return; if(!me?.user||typeof me.user.id!=='string')throw Error('会话资料格式异常，请重新连接。');setCsrfToken(me.csrf_token); setSession(me); setState('ready'); }
       catch(e) { if (id !== generation.current) return; if ((e as Json).status === 401) setState('login'); else throw e; }
@@ -63,9 +63,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     catch(e) { setError(errorMessage(e)); form.setFieldValue('password', ''); } finally { setBusy(false); }
   }
   if (state === 'ready' && session) return <SessionContext.Provider value={{ session, logout, refresh, permissionsChecking }}><div key={`${session.user.id}:${epoch}`} aria-busy={busy}>{busy && <div className="session-blocker" role="status">正在结束会话…</div>}{session.user.must_change_password ? <RequiredPasswordChange /> : children}</div></SessionContext.Provider>;
-  return <main className="auth-page"><section className="auth-panel"><a className="brand" href="/"><span className="brand-mark">Y</span><span>Y.ai<small className="brand-sub">Y.ai</small></span></a>
+  return <main className="auth-page"><section className="auth-panel"><a className="brand" href="/"><span className="brand-mark">Y</span><span>Yai</span></a>
     {state === 'checking' ? <div className="bootstrap-state" role="status"><span className="loading-orbit"/><h1>正在打开工作空间</h1><p>检查服务与安全会话…</p><div className="loading-lines"><i/><i/><i/></div></div> : state === 'error' ? <><h1>暂时无法打开</h1><Alert type="error" message="初始化检查未完成" description={error} /><Button type="primary" onClick={() => { reset(); void refresh(); }}>重新连接</Button></> : <>
-      <div className="eyebrow">{state === 'setup' ? 'WELCOME TO Y.ai' : 'YOUR PRIVATE WORKSPACE'}</div><h1>{state === 'setup' ? '创建首位管理员' : '欢迎回来'}</h1><p className="subtle">{state === 'setup' ? '为这套安装设置管理员账号和密码。密码只通过本地安全表单提交。' : '登录后继续使用你的智能体、知识与工具。'}</p>{error && <Alert type="error" message={error} />}
+      <div className="eyebrow">{state === 'setup' ? 'WELCOME TO Yai' : 'YOUR PRIVATE WORKSPACE'}</div><h1>{state === 'setup' ? '创建首位管理员' : '欢迎回来'}</h1><p className="subtle">{state === 'setup' ? '为这套安装设置管理员账号和密码。密码只通过本地安全表单提交。' : '登录后继续使用你的智能体、知识与工具。'}</p>{error && <Alert type="error" message={error} />}
       <Form form={form} layout="vertical" onFinish={submit} autoComplete="off"><Form.Item name="username" label="账号" rules={[{required:true,message:'请输入账号'}]}><Input autoComplete="username" disabled={busy}/></Form.Item>{state === 'setup' && <Form.Item name="display_name" label="显示名称"><Input disabled={busy}/></Form.Item>}<Form.Item name="password" label="密码" extra={state === 'setup' ? PASSWORD_MIN_MESSAGE : undefined} rules={state === 'setup' ? newPasswordRules : [{required:true,message:'请输入密码'}]}><Input.Password autoComplete={state === 'setup' ? 'new-password' : 'current-password'} disabled={busy}/></Form.Item><Button block type="primary" htmlType="submit" loading={busy}>{state === 'setup' ? '创建并进入工作空间' : '登录'}</Button></Form><Button type="link" size="small" onClick={() => { reset(); void refresh(); }}>重新检查安装状态</Button>
     </>}
   </section><p className="auth-caption">知识 · 工具 · 工作流，由你组织成章。</p></main>;
