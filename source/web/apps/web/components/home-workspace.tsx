@@ -80,11 +80,11 @@ function Conversation({user,permissionsChecking,onNavigate}:{user:Json;permissio
     </div>
     <ErrorBanner error={error}/>
     {loading?<Skeleton active paragraph={{rows:2}}/>:loadFailed?<Button onClick={()=>setAttempt(value=>value+1)}>重新加载对话助手</Button>:<>
-      {!agents.length&&<Alert type="info" message="尚无可用的智能体或工作流" description="请在 AI 工作室发布，或请资源所有者将你加入公开范围。" action={can('agents')?<Button onClick={()=>onNavigate('agents')}>打开 AI 工作室</Button>:undefined}/>}
+      {!agents.length&&<Alert type="info" message="尚无可用的智能体或工作流" description={can('agents')?'创建并发布一个智能体或工作流，或请资源所有者共享已发布的应用。':'请联系工作空间管理员或资源所有者，将你加入某个已发布应用的使用范围。授权后点击下方按钮刷新。'} action={can('agents')?<Button type="primary" onClick={()=>onNavigate('?page=agents&create=1')}>新建智能体或工作流</Button>:undefined}/>}
       {inputSchema?.properties&&Object.keys(inputSchema.properties).length>0&&<details open><summary>工作流参数</summary><Space wrap>{Object.entries(inputSchema.properties).map(([name,raw])=>{const field=raw as Json;return <label key={name}>{field.title||name}{inputSchema.required?.includes(name)?' *':''}<ParameterValue schema={field} value={inputs[name]} disabled={busy||!!run&&['queued','running'].includes(run.status)} onChange={value=>setInputs(previous=>({...previous,[name]:value}))}/></label>;})}</Space></details>}
-      <ChatComposer options={choices} key={identityKey} identityKey={identityKey} initialText={message.text} disabled={selected?.access?.execute!==true||permissionsChecking||!!run&&run.status==='outcome_unknown'} busy={busy||!!run&&['queued','running'].includes(run.status)} onSend={draft=>void execute(draft)}/>
+      {agents.length>0&&<ChatComposer options={choices} key={identityKey} identityKey={identityKey} initialText={message.text} disabled={selected?.access?.execute!==true||permissionsChecking||!!run&&run.status==='outcome_unknown'} busy={busy||!!run&&['queued','running'].includes(run.status)} onSend={draft=>void execute(draft)}/>}
       {lastAttempt&&error&&!run&&<p className="hint">请先核对对话记录，确认消息是否已提交，避免重复请求。</p>}
-      {!agents.length&&<Button type="text" onClick={()=>setAttempt(value=>value+1)}>重新读取对话配置</Button>}
+      {!agents.length&&<Button type="text" onClick={()=>setAttempt(value=>value+1)}>刷新可用助手</Button>}
     </>}
   </section>
   {!run&&shortcuts.length>0&&<section className="panel conversation-shortcuts">
