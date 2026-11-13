@@ -466,6 +466,14 @@ def target_user(session,user_id,context):
     if user is None or (user.tenant_id,user.workspace_id)!=(context.tenant_id,context.workspace_id):raise AppError("NOT_FOUND","Account not found",404)
     return user
 
+@router.get("/users/{user_id}",summary="读取当前空间单个账号及其有效功能权限")
+def get_user(user_id:str,request:Request,session=Depends(get_session)):
+    from app.rbac import require_permission
+    context=require_admin(request)
+    require_permission(context,session,"page.accounts")
+    require_permission(context,session,"accounts.manage")
+    return user_public(target_user(session,user_id,context),session)
+
 def set_extra_roles(session,user_id,role_ids):
     from app.data_models import UserRoleMembership
     session.execute(delete(UserRoleMembership).where(UserRoleMembership.user_id==user_id))
@@ -532,6 +540,23 @@ async def reset_password(user_id:str,body:PasswordReset,request:Request,session=
     audit(session,context,"account_password_reset","user",user.id)
     ids=revoke(session,user_id=user.id);session.commit();await cancel_sessions(ids)
     return {"password_changed":True,"sessions_revoked":True,"must_change_password":True,"initial_password":initial_password}
+
+@router.post("/users/{user_id}/revoke-sessions",summary="撤销账号当前会话和已签发平台短令牌")
+async def revoke_user_sessions(user_id:str,request:Request,session=Depends(get_session)):
+    from app.data_access import roles_for_user
+    from app.rbac import assignment,audit,require_permission
+    with _account_lock:
+        context=require_admin(request)
+        require_permission(context,session,"page.accounts")
+        require_permission(context,session,"accounts.manage")
+        user=target_user(session,user_id,context)
+        overrides=json.loads(user.permission_overrides) if user.permission_overrides is not None else None
+        assignment(session,context,list(roles_for_user(session,user)),overrides,target=user)
+        ids=revoke(session,user_id=user.id)
+        audit(session,context,"account_sessions_revoke","user",user.id)
+        session.commit()
+    await cancel_sessions(ids)
+    return {"user_id":user_id,"sessions_revoked":True,"platform_tokens_revoked":True}
 
 @router.post("/auth/password")
 async def change_password(body:PasswordChange,request:Request,response:Response,session=Depends(get_session)):

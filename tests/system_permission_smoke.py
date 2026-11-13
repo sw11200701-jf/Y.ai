@@ -2,6 +2,7 @@
 from contextlib import ExitStack, closing
 import json
 import os
+import secrets
 
 from fastapi.testclient import TestClient
 
@@ -13,8 +14,10 @@ from workspace_publication_smoke import workflow
 
 def check():
     assert os.environ.get("FINANCE_DATA_DIR")
+    owner_password = secrets.token_urlsafe(24)
+    user_password = secrets.token_urlsafe(24)
     with TestClient(app, base_url=ORIGIN, client=("127.0.0.1", 53000)) as owner, ExitStack() as stack:
-        administrator = body(post(owner, "/auth/setup", {"username": "system_owner", "password": "SystemFixture!858"}), 201)["user"]
+        administrator = body(post(owner, "/auth/setup", {"username": "system_owner", "password": owner_password}), 201)["user"]
         workspace = administrator["workspace_id"]
 
         def login(name, role, port):
@@ -23,7 +26,7 @@ def check():
             body(post(caller, "/auth/login", {"username": name, "password": user["initial_password"]}), 200)
             assert body(caller.get("/api/v1/agents"), 403)["error"]["code"] == "PASSWORD_CHANGE_REQUIRED"
             body(post(caller, "/auth/password", {"current_password": user["initial_password"],
-                "new_password": "SystemFixture!784"}), 200)
+                "new_password": user_password}), 200)
             return caller, user
 
         def put(caller, path, value, method="PUT"):
@@ -32,6 +35,13 @@ def check():
 
         admin, _ = login("system_admin", "admin", 53001)
         member, person = login("system_member", "member", 53002)
+        account = f"/api/v1/users/{person['id']}"
+        detail = body(owner.get(account), 200)
+        assert detail["id"] == person["id"] and "page.workbench" in detail["permissions"]
+        assert not {"initial_password", "password_hash"} & detail.keys()
+        body(owner.get("/api/v1/users/nonexistent"), 404)
+        body(member.get(account), 403)
+        assert body(put(admin, f"/users/{administrator['id']}/revoke-sessions", {}, "POST"), 403)["error"]["code"] == "ROLE_GRANT_DENIED"
         body(member.get("/api/v1/agents"), 200)
         body(member.get("/api/v1/users"), 403)
         body(member.get("/api/v1/workspace-logs"), 403)
@@ -67,6 +77,9 @@ def check():
         exchange = member.post(PREFIX + "/token", json={"api_key": receipt["api_key"]})
         access_token = body(exchange, 200)["access_token"]
         bearer = {"Authorization": "Bearer " + access_token}
+        with closing(TestClient(app, base_url=ORIGIN)) as machine:
+            body(machine.get(account, headers=bearer), 401)
+            body(machine.post(account + "/revoke-sessions", headers=bearer), 401)
         directory = PREFIX + f"/spaces/{workspace}/resources"
         resources = body(member.get(directory, params={"kind": "workflow"}, headers=bearer), 200)["items"]
         assert next(item for item in resources if item["id"] == identifier)["name"] == "Published fixture"
@@ -98,6 +111,22 @@ def check():
         manage = f"/api/v1/platform/spaces/{workspace}/resources"
         listed = body(owner.get(manage, params={"kind": "workflow"}), 200)["items"]
         assert archived["id"] not in {item["id"] for item in listed}
+
+        replacement = body(member.post(PREFIX + "/token",
+            json={"api_key": receipt["api_key"], "workspace_ids": [workspace]}), 200)["access_token"]
+        body(owner.post(account + "/revoke-sessions", json={}), 403)
+        result = body(post(owner, f"/users/{person['id']}/revoke-sessions", {}), 200)
+        assert result == {"user_id": person["id"], "sessions_revoked": True, "platform_tokens_revoked": True}
+        body(member.get("/api/v1/auth/me"), 401)
+        body(member.get(directory, headers={"Authorization": "Bearer " + replacement}), 401)
+        body(post(member, "/auth/login", {"username": "system_member", "password": user_password}), 200)
+        updated = body(put(owner, f"/users/{person['id']}",
+            {"display_name": "Synthetic restricted reader", "permissions": ["page.workbench"]}, "PATCH"), 200)
+        assert updated["display_name"] == "Synthetic restricted reader"
+        assert body(member.get("/api/v1/auth/me"), 200)["user"]["permissions"] == ["page.workbench"]
+        body(put(owner, f"/users/{person['id']}", {"active": False}, "PATCH"), 200)
+        assert body(owner.get(account), 200)["active"] is False
+        body(member.get("/api/v1/auth/me"), 401)
 
 
 if __name__ == "__main__":

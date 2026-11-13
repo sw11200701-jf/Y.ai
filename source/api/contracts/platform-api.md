@@ -244,3 +244,42 @@ curl --fail-with-body -sS -H "Authorization: Bearer $TOKEN" -H 'Content-Type: ap
 | 503 | 服务暂不可用。提交请求若提示结果待确认，先查询原运行或按幂等规则重试 |
 
 在「平台 API 与空间」下载 OpenAPI JSON，或携带平台 Bearer 令牌读取 `GET /api/platform/v1/openapi.json`。具体工作流和 Agent 的业务输入输出以各自发布版本返回的 Schema 为准。
+
+## 6. 账号、角色与权限管理
+
+以下路径以 `/api/v1` 为前缀，使用人类登录会话。客户端先读取 `GET /auth/csrf` 并保留会话 Cookie，写入请求携带与部署匹配的 `Origin` 及 `X-CSRF-Token`。登录返回新的 CSRF 令牌；登录后的写入可通过 `GET /auth/me` 获取当前令牌。平台短令牌和应用密钥的授权范围不包含账号管理。
+
+| 方法与路径 | 用途 |
+| --- | --- |
+| `GET /auth/me` | 查询当前账号、所属空间、会话有效期和实际生效的功能权限 |
+| `GET /users`、`GET /users/{user_id}` | 列出当前空间账号，或按 ID 获取单个账号。包含状态、主角色、附加角色、有效权限、个人权限限制、委派上限、公司和部门 |
+| `POST /users` | 新建账号。提交 `username`、可选 `display_name`、`role_id` 或 `role_ids`、`permissions`、`company_id`、`department_id` |
+| `PATCH /users/{user_id}` | 修改显示名、角色列表、个人功能权限限制、公司、部门或 `active`。未提交的字段保持原值。用户名是登录标识 |
+| `POST /users/{user_id}/reset-password` | 提交 `{}`，生成新初始密码并撤销既有会话。首次登录须改密 |
+| `POST /users/{user_id}/revoke-sessions` | 撤销该账号的登录会话及已签发的平台短令牌。账号状态、密码及长期平台密钥保持有效 |
+| `POST /auth/password` | 当前账号提交 `current_password` 和 `new_password` 修改自己的密码 |
+| `GET /permissions`、`GET /roles` | 获取功能权限键和可管理角色 |
+| `POST /roles`、`PATCH /roles/{role_id}`、`DELETE /roles/{role_id}` | 超级管理员创建、修改或删除当前空间角色。创建用 `name`、`base_role`（`member` 或 `admin`）、`permissions`。内置或使用中的角色受保护 |
+| `GET/PUT /roles/{role_id}/resource-policy` | 查询或设置角色对自己或空间资源的默认访问、执行权限及资源例外 |
+| `GET /users/{user_id}/data-access` | 列出该账号拥有或获得授权、且调用者可管理的数据资源。结果随调用者范围变化 |
+| `GET/PUT /data-access/{kind}/{resource_id}` | 查询或替换资源数据授权。按账号或角色设置允许、拒绝、限制、行范围和字段屏蔽。读取后提交完整规则集 |
+| `GET /data-access/{kind}/{resource_id}/subjects`、`GET /data-access/{kind}/{resource_id}/capabilities` | 获取可用主体及资源支持的数据权限 |
+| `GET/PUT /resources/{kind}/{resource_id}/access` | 查询或更新工作流、智能体等资源的共享授权，以对应资源支持的操作为准 |
+| `GET /platform/spaces/{workspace_id}/members`、`PUT /platform/spaces/{workspace_id}/members` | 查询目标空间成员或配置成员的 `user_id`、`role_id`、`active` |
+| `GET/POST /platform/spaces/{workspace_id}/roles`、`PATCH /platform/spaces/{workspace_id}/roles/{role_id}` | 管理指定空间的角色。修改时提交当前 `expected_updated_at` |
+| `GET/PUT /platform/spaces/{workspace_id}/roles/{role_id}/resource-policy` | 查询或设置指定空间角色的资源策略 |
+| `GET /auth/session-policies`、`PUT /auth/session-policies/{role_id}` | 管理角色的会话总时长、空闲时长，写入提交 `expected_revision` |
+| `GET /workspace-logs` | 超级管理员按类型、查询编号、运行编号或错误代码查询日志 |
+
+账号创建示例。先从 `GET /roles` 获取目标角色 ID。
+
+```json
+{
+  "username": "finance_reader",
+  "display_name": "财务知识查询",
+  "role_ids": ["member"],
+  "permissions": ["page.workbench", "page.knowledge"]
+}
+```
+
+创建和重置密码会在响应中返回一次 `initial_password`。账号详情接口只返回账号资料和权限。个人 `permissions` 只缩小角色权限，传 `null` 改回继承角色，空数组表示不授予个人功能权限。需要扩大权限时，先由授权管理员配置合适的角色。功能权限、资源可见性和行列授权各自生效。停用账号使用 `PATCH /users/{user_id}` 提交 `{"active":false}`，最后一名有效超级管理员受保护。
